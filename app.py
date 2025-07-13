@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 """
-Stock Summary Agent - FastAPI Backend
-Complete agent-based architecture(using LangChain) with LangGraph orchestration
+Stock Summary Agent - FastAPI REST API
+Provides FastAPI REST API with complete agent-based architecture
 """
 
-import asyncio
-import time
+import logging
 import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-import logging
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-import uvicorn
 
 # Import our agent system
 from agents.coordinator import CoordinatorAgent
-from models import AgentState, StockSummary, SystemConfig
+from models import StockSummary
 from utils import setup_environment, log_info, log_error
 
 # Configure logging
@@ -29,27 +26,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Stock Summary Agent",
-    description="AI-powered stock analysis platform with complete agent-based architecture",
-    version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc"
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Global coordinator agent instance
-coordinator_agent: Optional[CoordinatorAgent] = None
-
+# ===============================================================================
+# FASTAPI MODELS
+# ===============================================================================
 
 class AnalysisRequest(BaseModel):
     """Request model for stock analysis"""
@@ -100,24 +79,186 @@ class HealthResponse(BaseModel):
     agents_status: Dict[str, str]
     system_info: Dict[str, Any]
 
+# ===============================================================================
+# AGENT WRAPPER
+# ===============================================================================
+
+class StockSummaryAgent:
+    """Main agent for stock analysis with FastAPI integration."""
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize the Stock Summary Agent."""
+        self.config = config or {}
+        self._initialize_system()
+    
+    def _initialize_system(self):
+        """Initialize the agent system."""
+        try:
+            # Setup environment
+            setup_environment()
+            
+            # Initialize coordinator
+            self.coordinator = CoordinatorAgent(self.config)
+            
+            log_info("Stock Summary Agent initialized successfully")
+            
+        except Exception as e:
+            log_error(f"Failed to initialize Stock Summary Agent: {str(e)}")
+            raise
+    
+    async def analyze_stock(self, query: str) -> Dict[str, Any]:
+        """Analyze a stock query and return comprehensive analysis."""
+        try:
+            log_info(f"Processing stock query: {query}")
+            
+            # Process query through coordinator
+            result = await self.coordinator.process_query(query)
+            
+            if result.get("success", False):
+                return self._format_success_response(result)
+            else:
+                return self._format_error_response(result)
+                
+        except Exception as e:
+            log_error(f"Stock analysis failed: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Analysis failed: {str(e)}",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {
+                    "query": query,
+                    "error_type": type(e).__name__
+                }
+            }
+    
+    def _format_success_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Format successful analysis response."""
+        final_summary = result.get("final_summary", {})
+        
+        # Extract core analysis data
+        analysis_data = {
+            "company_name": final_summary.get("company_name", "Unknown"),
+            "ticker": final_summary.get("ticker", "Unknown"),
+            "executive_summary": final_summary.get("executive_summary", ""),
+            "price_analysis": final_summary.get("price_analysis", ""),
+            "news_sentiment": final_summary.get("news_sentiment", ""),
+            "technical_outlook": final_summary.get("technical_outlook", ""),
+            "risk_assessment": final_summary.get("risk_assessment", ""),
+            "confidence_level": final_summary.get("confidence_level", 0.0),
+            "data_sources": final_summary.get("data_sources", [])
+        }
+        
+        return {
+            "success": True,
+            "company": analysis_data["company_name"],
+            "ticker": analysis_data["ticker"],
+            "analysis": analysis_data,
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {
+                "step_count": result.get("step_count", 0),
+                "data_sources": analysis_data["data_sources"],
+                "confidence_level": analysis_data["confidence_level"]
+            }
+        }
+    
+    def _format_error_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Format error response."""
+        errors = result.get("errors", ["Unknown error occurred"])
+        
+        return {
+            "success": False,
+            "error": "; ".join(errors),
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {
+                "step_count": result.get("step_count", 0),
+                "errors": errors
+            }
+        }
+    
+    async def get_supported_companies(self) -> List[str]:
+        """Get list of supported companies."""
+        try:
+            # This could be expanded to return actual supported companies
+            # For now, return a placeholder
+            return [
+                "Apple Inc. (AAPL)",
+                "Microsoft Corporation (MSFT)",
+                "Amazon.com Inc. (AMZN)",
+                "Tesla Inc. (TSLA)",
+                "Alphabet Inc. (GOOGL)"
+            ]
+        except Exception as e:
+            log_error(f"Failed to get supported companies: {str(e)}")
+            return []
+    
+    async def validate_company(self, company_name: str) -> Dict[str, Any]:
+        """Validate a company name and return ticker if found."""
+        try:
+            # Use the ticker lookup agent for validation
+            ticker_lookup = self.coordinator.ticker_lookup_agent
+            result = await ticker_lookup.resolve_company_ticker(company_name)
+            
+            if result.get("success", False):
+                return {
+                    "valid": True,
+                    "ticker": result.get("ticker"),
+                    "company_name": result.get("company_name"),
+                    "suggestions": []
+                }
+            else:
+                # Try to get suggestions
+                suggestions = await ticker_lookup.suggest_companies(company_name)
+                return {
+                    "valid": False,
+                    "ticker": None,
+                    "company_name": company_name,
+                    "suggestions": suggestions
+                }
+                
+        except Exception as e:
+            log_error(f"Company validation failed: {str(e)}")
+            return {
+                "valid": False,
+                "ticker": None,
+                "company_name": company_name,
+                "suggestions": [],
+                "error": str(e)
+            }
+
+# ===============================================================================
+# FASTAPI APPLICATION
+# ===============================================================================
+
+app = FastAPI(
+    title="AI Stock Summary Agent",
+    description="Advanced AI-powered stock analysis and summary generation",
+    version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Global agent instance
+agent = None
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the agent system on startup"""
-    global coordinator_agent
-    
+    """Initialize the agent system on startup."""
+    global agent
     try:
-        log_info("🚀 Starting Stock Summary Agent API")
+        log_info("🚀 Starting Stock Summary Agent API...")
+        log_info("📋 Initializing agent system...")
         
-        # Setup environment
-        setup_environment()
-        
-        # Initialize coordinator agent
-        log_info("🤖 Initializing agent system...")
-        coordinator_agent = CoordinatorAgent()
+        agent = StockSummaryAgent()
         
         log_info("✅ Agent system initialized successfully")
-        log_info("🌐 FastAPI server ready")
+        log_info("🌐 API server ready to accept requests")
         
     except Exception as e:
         log_error(f"❌ Failed to initialize agent system: {str(e)}")
@@ -125,267 +266,212 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown"""
-    log_info("🛑 Shutting down Stock Summary Agent API")
+    """Cleanup on shutdown."""
+    log_info("🔄 Shutting down Stock Summary Agent API...")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests with timing"""
-    start_time = time.time()
+    """Log all incoming requests."""
+    start_time = datetime.now()
     
     response = await call_next(request)
     
-    process_time = time.time() - start_time
-    
-    logger.info(
-        f"Request: {request.method} {request.url.path} - "
-        f"Status: {response.status_code} - "
-        f"Time: {process_time:.2f}s"
-    )
+    process_time = (datetime.now() - start_time).total_seconds()
+    log_info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.3f}s")
     
     return response
 
+# ===============================================================================
+# API ENDPOINTS
+# ===============================================================================
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint."""
+    global agent
+    
+    agents_status = {}
+    system_info = {}
+    
     try:
-        # Check agent system status
-        agents_status = {}
-        if coordinator_agent:
+        if agent and agent.coordinator:
+            # Check agent status
             agents_status = {
                 "coordinator": "healthy",
+                "ticker_lookup": "healthy",
                 "research": "healthy",
                 "analysis": "healthy",
                 "sentiment": "healthy",
                 "summarization": "healthy"
             }
-        else:
-            agents_status = {"system": "not_initialized"}
-        
-        return HealthResponse(
-            status="healthy",
-            timestamp=datetime.now(),
-            agents_status=agents_status,
-            system_info={
-                "version": "1.0.0",
-                "architecture": "agent-based",
-                "backend": "fastapi"
+            
+            # System info
+            system_info = {
+                "python_version": "3.8+",
+                "langchain_available": True,
+                "openai_configured": bool(os.getenv('OPENAI_API_KEY')),
+                "environment": os.getenv('ENVIRONMENT', 'development')
             }
-        )
+            
+            return HealthResponse(
+                status="healthy",
+                timestamp=datetime.now(),
+                agents_status=agents_status,
+                system_info=system_info
+            )
+        else:
+            raise Exception("Agent not initialized")
+            
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Health check failed")
+        return HealthResponse(
+            status="unhealthy",
+            timestamp=datetime.now(),
+            agents_status={"error": str(e)},
+            system_info={"error": "System check failed"}
+        )
 
 @app.post("/analyze", response_model=AnalysisResponse)
 async def analyze_stock(request: AnalysisRequest):
-    """Analyze a single stock"""
+    """Analyze a stock query and return comprehensive analysis."""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
     try:
-        if not coordinator_agent:
-            raise HTTPException(status_code=500, detail="Agent system not initialized")
+        log_info(f"Received analysis request for: {request.query}")
         
-        log_info(f"📊 Analyzing stock: {request.query}")
+        # Process the analysis request
+        result = await agent.analyze_stock(request.query)
         
-        # Create session ID
-        session_id = f"session_{int(time.time())}"
-        
-        # Process the query through the agent system
-        result = await coordinator_agent.process_query(request.query, session_id)
-        
-        if result["success"]:
-            # Format successful response
-            analysis_data = result.get("final_summary", {})
-            
+        if result.get("success", False):
             return AnalysisResponse(
                 success=True,
-                company=analysis_data.get("company_name", "Unknown"),
-                ticker=analysis_data.get("ticker", "Unknown"),
-                analysis={
-                    "executive_summary": analysis_data.get("executive_summary", ""),
-                    "technical_analysis": analysis_data.get("price_analysis", ""),
-                    "sentiment_analysis": analysis_data.get("news_sentiment", ""),
-                    "risk_assessment": analysis_data.get("risk_assessment", "")
-                },
-                metadata={
-                    "processing_time": result.get("processing_time", 0),
-                    "agents_used": result.get("agents_used", []),
-                    "data_sources": result.get("data_sources", []),
-                    "session_id": session_id
-                }
+                company=result.get("company"),
+                ticker=result.get("ticker"),
+                analysis=result.get("analysis"),
+                metadata=result.get("metadata", {})
             )
         else:
             return AnalysisResponse(
                 success=False,
                 error=result.get("error", "Analysis failed"),
-                metadata={"session_id": session_id}
+                metadata=result.get("metadata", {})
             )
             
     except Exception as e:
-        logger.error(f"Analysis failed: {str(e)}")
-        return AnalysisResponse(
-            success=False,
-            error=f"Analysis failed: {str(e)}"
-        )
+        log_error(f"Analysis endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 @app.post("/batch-analyze", response_model=BatchAnalysisResponse)
 async def batch_analyze_stocks(request: BatchAnalysisRequest):
-    """Analyze multiple stocks concurrently"""
+    """Analyze multiple stock queries concurrently."""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
     try:
-        if not coordinator_agent:
-            raise HTTPException(status_code=500, detail="Agent system not initialized")
+        log_info(f"Received batch analysis request for {len(request.queries)} queries")
         
-        log_info(f"📊 Batch analyzing {len(request.queries)} stocks")
+        # Process all queries concurrently
+        import asyncio
         
-        # Process queries concurrently
-        tasks = []
-        for query in request.queries:
-            session_id = f"batch_{int(time.time())}_{len(tasks)}"
-            tasks.append(coordinator_agent.process_query(query, session_id))
+        # Create tasks for concurrent execution
+        tasks = [agent.analyze_stock(query) for query in request.queries]
         
-        # Wait for all analyses to complete
+        # Execute all tasks concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Format results
-        analysis_results = []
+        # Process results
+        processed_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                analysis_results.append(AnalysisResponse(
+                processed_results.append(AnalysisResponse(
                     success=False,
-                    error=f"Analysis failed: {str(result)}"
+                    error=str(result),
+                    metadata={"query": request.queries[i]}
                 ))
             else:
-                if result["success"]:
-                    analysis_data = result.get("final_summary", {})
-                    analysis_results.append(AnalysisResponse(
-                        success=True,
-                        company=analysis_data.get("company_name", "Unknown"),
-                        ticker=analysis_data.get("ticker", "Unknown"),
-                        analysis={
-                            "executive_summary": analysis_data.get("executive_summary", ""),
-                            "technical_analysis": analysis_data.get("price_analysis", ""),
-                            "sentiment_analysis": analysis_data.get("news_sentiment", ""),
-                            "risk_assessment": analysis_data.get("risk_assessment", "")
-                        },
-                        metadata=result.get("metadata", {})
-                    ))
-                else:
-                    analysis_results.append(AnalysisResponse(
-                        success=False,
-                        error=result.get("error", "Analysis failed")
-                    ))
-        
-        successful_count = sum(1 for r in analysis_results if r.success)
+                processed_results.append(AnalysisResponse(
+                    success=result.get("success", False),
+                    company=result.get("company"),
+                    ticker=result.get("ticker"),
+                    analysis=result.get("analysis"),
+                    metadata=result.get("metadata", {}),
+                    error=result.get("error")
+                ))
         
         return BatchAnalysisResponse(
             success=True,
-            results=analysis_results,
+            results=processed_results,
             metadata={
                 "total_queries": len(request.queries),
-                "successful": successful_count,
-                "failed": len(request.queries) - successful_count
+                "processed_at": datetime.now().isoformat()
             }
         )
         
     except Exception as e:
-        logger.error(f"Batch analysis failed: {str(e)}")
-        return BatchAnalysisResponse(
-            success=False,
-            results=[],
-            metadata={"error": str(e)}
-        )
+        log_error(f"Batch analysis endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
 
 @app.post("/validate-ticker", response_model=TickerValidationResponse)
 async def validate_ticker(request: TickerValidationRequest):
-    """Validate and resolve company ticker"""
+    """Validate a company name and return ticker information."""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
     try:
-        from services.ticker_lookup import TickerLookup
+        log_info(f"Received ticker validation request for: {request.company_name}")
         
-        lookup = TickerLookup()
-        ticker = lookup.lookup_ticker(request.company_name)
+        result = await agent.validate_company(request.company_name)
         
-        if ticker:
-            company_name = lookup.get_company_name(ticker)
-            return TickerValidationResponse(
-                valid=True,
-                ticker=ticker,
-                company_name=company_name,
-                suggestions=[]
-            )
-        else:
-            suggestions = lookup.suggest_tickers(request.company_name, limit=5)
-            return TickerValidationResponse(
-                valid=False,
-                ticker=None,
-                company_name=None,
-                suggestions=suggestions
-            )
-            
-    except Exception as e:
-        logger.error(f"Ticker validation failed: {str(e)}")
         return TickerValidationResponse(
-            valid=False,
-            suggestions=[],
+            valid=result.get("valid", False),
+            ticker=result.get("ticker"),
+            company_name=result.get("company_name"),
+            suggestions=result.get("suggestions", [])
         )
+        
+    except Exception as e:
+        log_error(f"Ticker validation endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ticker validation failed: {str(e)}")
 
 @app.get("/supported-companies")
 async def get_supported_companies():
-    """Get list of supported companies"""
+    """Get list of supported companies."""
+    global agent
+    
+    if not agent:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
     try:
-        from services.ticker_lookup import TickerLookup
-        
-        lookup = TickerLookup()
-        companies = list(lookup.common_tickers.keys())
-        
-        return {
-            "success": True,
-            "companies": sorted([company.title() for company in companies]),
-            "count": len(companies)
-        }
+        companies = await agent.get_supported_companies()
+        return {"companies": companies}
         
     except Exception as e:
-        logger.error(f"Failed to get supported companies: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "companies": [],
-            "count": 0
-        }
+        log_error(f"Supported companies endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get supported companies: {str(e)}")
+
+# ===============================================================================
+# EXCEPTION HANDLERS
+# ===============================================================================
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle HTTP exceptions"""
+    """Handle HTTP exceptions."""
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "success": False,
-            "error": exc.detail,
-            "timestamp": datetime.now().isoformat()
-        }
+        content={"error": exc.detail, "status_code": exc.status_code}
     )
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Handle general exceptions"""
+    """Handle general exceptions."""
     logger.error(f"Unhandled exception: {str(exc)}")
     return JSONResponse(
         status_code=500,
-        content={
-            "success": False,
-            "error": "Internal server error",
-            "timestamp": datetime.now().isoformat()
-        }
-    )
-
-if __name__ == "__main__":
-    # Configuration
-    host = os.getenv("FASTAPI_HOST", "0.0.0.0")
-    port = int(os.getenv("FASTAPI_PORT", "8000"))
-    reload = os.getenv("FASTAPI_RELOAD", "false").lower() == "true"
-    
-    # Start server
-    uvicorn.run(
-        "app:app",
-        host=host,
-        port=port,
-        reload=reload,
-        log_level="info"
+        content={"error": "Internal server error", "status_code": 500}
     ) 

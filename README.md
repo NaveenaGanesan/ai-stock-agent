@@ -37,28 +37,78 @@ graph TB
 
 ```
 ai-stock-agent/
-├── app.py                    # FastAPI Backend (REST API)
-├── main.py                   # CLI Interface & Core Logic
-├── models/                   # Data Models & Schemas
+├── app.py                           # Unified FastAPI Backend + CLI Interface
+├── models/                          # Data Models & Schemas
 │   ├── __init__.py
-│   └── models.py            # Unified StockAgentModels class
-├── agents/                   # AI Agents & Orchestration
+│   └── models.py                   # Unified StockAgentModels class
+├── agents/                          # AI Agents & Orchestration
 │   ├── __init__.py
-│   ├── agents.py            # Specialized AI agents
-│   └── coordinator.py       # LangGraph workflow coordinator
-├── services/                 # External Services Integration
+│   ├── coordinator.py              # LangGraph workflow coordinator
+│   ├── ticker_lookup_agent.py      # Company/ticker resolution agent
+│   ├── research_agent.py           # Data collection & research agent
+│   ├── analysis_agent.py           # Technical analysis agent
+│   ├── sentiment_agent.py          # News sentiment analysis agent
+│   └── summarization_agent.py      # Final summary generation agent
+├── services/                        # External Services Integration
 │   ├── __init__.py
-│   ├── ticker_lookup.py     # Company/ticker resolution
-│   ├── stock_data.py        # Stock market data fetching
-│   └── news_fetcher.py      # News article collection
-├── utils/                    # Utility Functions
+│   ├── ticker_lookup.py            # Company/ticker resolution service
+│   ├── stock_data.py               # Stock market data fetching service
+│   └── news_fetcher.py             # News article collection service
+├── utils/                           # Utility Functions
 │   ├── __init__.py
-│   └── utils.py             # Helper functions & formatting
-├── config/                   # Configuration
-│   └── env.example          # Environment variables template
-├── requirements.txt          # Python dependencies
-└── README.md                # This file
+│   └── utils.py                    # Helper functions & formatting
+├── env.example                      # Environment variables template
+├── requirements.txt                 # Python dependencies
+└── README.md                       # This file
 ```
+
+## 🔧 LangChain & LangGraph Architecture
+
+### How LangChain is Used
+
+**LangChain** provides the foundation for our AI agent system:
+
+1. **LLM Integration**: Each agent uses `ChatOpenAI` from LangChain to interact with GPT-4
+2. **Agent Framework**: Agents use LangChain's agent framework with tools and memory
+3. **Prompt Templates**: Structured prompts using `ChatPromptTemplate` and `MessagesPlaceholder`
+4. **Memory Management**: Each agent has `ConversationBufferMemory` for context retention
+5. **Tool Integration**: Custom tools for stock data, news fetching, and ticker lookup
+
+### How LangGraph is Used
+
+**LangGraph** orchestrates the entire workflow as a state machine:
+
+1. **State Management**: `GraphState` tracks the complete workflow state
+2. **Workflow Orchestration**: Sequential execution of agents through defined nodes
+3. **Error Handling**: Robust error propagation and state recovery
+4. **Parallel Processing**: Efficient execution of independent tasks
+
+### Agent Workflow
+
+```mermaid
+graph TB
+    A[Initialize] --> B[Ticker Lookup Agent]
+    B --> C[Research Agent]
+    C --> D[Analysis Agent]
+    D --> E[Sentiment Agent]
+    E --> F[Summarization Agent]
+    F --> G[Finalize]
+    
+    subgraph "LangGraph State Machine"
+        H[GraphState] --> I[WorkflowState]
+        I --> J[Agent Responses]
+        J --> K[Final Summary]
+    end
+```
+
+### Individual Agent Architecture
+
+Each agent is a self-contained unit with:
+- **LangChain LLM**: GPT-4 integration with specific temperature settings
+- **Custom Tools**: Agent-specific tools for data fetching and processing
+- **Prompt Engineering**: Specialized prompts for optimal performance
+- **Error Handling**: Retry logic and graceful failure handling
+- **State Management**: Local state tracking and workflow integration
 
 ## 🚀 Getting Started
 
@@ -126,8 +176,11 @@ GNEWS_API_KEY=your_gnews_key_here
 Start the FastAPI server:
 
 ```bash
-# Using Python directly
-python app.py
+# Start the FastAPI server
+python app.py --server
+
+# Or specify custom host/port
+python app.py --server --host 0.0.0.0 --port 8000
 
 # Or using uvicorn directly
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
@@ -144,16 +197,19 @@ Use the command-line interface:
 
 ```bash
 # Analyze a single stock
-python main.py --query "Tell me about Apple stock"
+python app.py --query "Tell me about Apple stock"
 
 # Analyze multiple stocks
-python main.py --batch "Apple,Microsoft,Google"
+python app.py --batch "Apple,Microsoft,Google"
 
 # Custom output format
-python main.py --query "TSLA analysis" --format json
+python app.py --query "TSLA analysis" --format json
 
 # Verbose output
-python main.py --query "Amazon stock" --verbose
+python app.py --query "Amazon stock" --verbose
+
+# Interactive mode (default)
+python app.py
 ```
 
 ### Option 3: Python Library
@@ -162,7 +218,7 @@ Use as a Python library:
 
 ```python
 import asyncio
-from main import analyze_stock_simple
+from app import analyze_stock_simple
 
 async def main():
     result = await analyze_stock_simple("Tell me about Apple stock")
@@ -207,66 +263,206 @@ curl "http://localhost:8000/health"
 ## 🤖 Agent Architecture
 
 ### 🎯 Coordinator Agent (LangGraph)
-**Role**: Orchestrates the entire analysis workflow
+**Role**: Orchestrates the entire analysis workflow using LangGraph
 **Responsibilities**:
-- Manages agent communication and state
-- Coordinates parallel processing
+- Manages agent communication and state through LangGraph state machine
+- Coordinates sequential execution of specialized agents
 - Handles error recovery and retry logic
-- Optimizes agent execution order
+- Optimizes workflow execution and resource management
 
 ```python
-class CoordinatorAgent(BaseAgent):
+class CoordinatorAgent:
     def __init__(self):
-        self.workflow = self._build_langgraph_workflow()
-        self.agents = self._initialize_specialized_agents()
-    
-    def _build_langgraph_workflow(self):
-        # LangGraph workflow definition
-        workflow = StateGraph(AgentState)
-        workflow.add_node("data_collection", self._data_collection_step)
-        workflow.add_node("analysis", self._analysis_step)
-        workflow.add_node("summarization", self._summarization_step)
-        # ... workflow edges and logic
-        return workflow
+        self.workflow = self._build_workflow()  # LangGraph StateGraph
+        self.ticker_lookup_agent = TickerLookupAgent()
+        self.research_agent = ResearchAgent()
+        self.analysis_agent = AnalysisAgent()
+        self.sentiment_agent = SentimentAgent()
+        self.summarization_agent = SummarizationAgent()
+        self.app = self.workflow.compile()  # Compile LangGraph workflow
 ```
 
-### 🔍 Data Collection Agent
-**Role**: Orchestrates all data gathering operations
-**Sub-Agents**:
-- `TickerLookupAgent`: Company name → ticker resolution
-- `StockDataAgent`: Real-time stock data collection
-- `NewsAggregationAgent`: Multi-source news gathering
-- `MarketDataAgent`: Market context and indicators
+### 🔍 Ticker Lookup Agent
+**Role**: Resolves company names to stock ticker symbols
+**Capabilities**:
+- Company name parsing and normalization
+- Ticker symbol resolution with high accuracy
+- Fuzzy matching for ambiguous company names
+- Suggestion generation for failed lookups
+- AI-assisted company name extraction from natural language
 
 ```python
-class DataCollectionAgent(BaseAgent):
-    def __init__(self):
-        self.ticker_agent = TickerLookupAgent()
-        self.stock_agent = StockDataAgent()
-        self.news_agent = NewsAggregationAgent()
-        self.market_agent = MarketDataAgent()
-    
-    async def collect_data(self, query: str) -> CollectedData:
-        # Parallel data collection using sub-agents
-        ticker = await self.ticker_agent.resolve_ticker(query)
-        stock_data, news_data, market_data = await asyncio.gather(
-            self.stock_agent.get_stock_data(ticker),
-            self.news_agent.get_news(ticker),
-            self.market_agent.get_market_context(ticker)
-        )
-        return CollectedData(ticker, stock_data, news_data, market_data)
+class TickerLookupAgent:
+    async def resolve_company_ticker(self, query: str) -> Dict[str, Any]:
+        # Direct lookup first, then AI-assisted extraction
+        result = await self._try_direct_lookup(query)
+        if not result["success"]:
+            result = await self._ai_assisted_lookup(query)
+        return result
 ```
 
-### 📈 Technical Analysis Agent
+### 📊 Research Agent
+**Role**: Comprehensive data collection and validation
+**Capabilities**:
+- Stock price data fetching (yfinance integration)
+- News article collection from multiple sources
+- Data quality validation and cleaning
+- Historical data analysis
+- Real-time market data integration
+
+```python
+class ResearchAgent:
+    def __init__(self):
+        self.tools = [StockDataTool(), NewsDataTool(), TickerLookupTool()]
+        self.stock_fetcher = StockDataFetcher()
+        self.news_fetcher = NewsFetcher()
+        
+    async def research_company(self, query: str) -> Dict[str, Any]:
+        # Fetch comprehensive data for analysis
+        return await self.execute_task(task, workflow_state)
+```
+
+### 📈 Analysis Agent
 **Role**: Performs comprehensive technical analysis
 **Capabilities**:
-- Price trend analysis
-- Technical indicators (RSI, MACD, Moving Averages)
-- Support/resistance levels
-- Volume analysis
-- Volatility assessment
+- Price trend analysis and pattern recognition
+- Technical indicators calculation
+- Support/resistance level identification
+- Volume analysis and momentum assessment
+- Volatility and risk metric calculation
 
 ```python
+class AnalysisAgent:
+    async def analyze_stock(self, stock_data: StockData) -> Dict[str, Any]:
+        # Comprehensive technical analysis using GPT-4
+        analysis_input = self._prepare_analysis_input(stock_data)
+        result = await self.llm.ainvoke([
+            SystemMessage(content=self.prompt.messages[0].content),
+            HumanMessage(content=f"Analyze: {analysis_input}")
+        ])
+        return await self._process_analysis_result(result, stock_data)
+```
+
+### 📰 Sentiment Agent
+**Role**: News sentiment analysis and theme extraction
+**Capabilities**:
+- Multi-article sentiment analysis
+- Financial news interpretation
+- Key theme and topic extraction
+- Market impact assessment
+- Sentiment scoring and classification
+
+```python
+class SentimentAgent:
+    async def analyze_sentiment(self, news_data: NewsData) -> Dict[str, Any]:
+        # Analyze sentiment of multiple news articles
+        sentiment_input = self._prepare_sentiment_input(news_data)
+        result = await self.llm.ainvoke([
+            SystemMessage(content=self.prompt.messages[0].content),
+            HumanMessage(content=f"Analyze sentiment: {sentiment_input}")
+        ])
+        return await self._process_sentiment_result(result, news_data)
+```
+
+### 📝 Summarization Agent
+**Role**: Creates comprehensive natural language summaries
+**Capabilities**:
+- Executive summary generation
+- Multi-source data synthesis
+- Risk assessment compilation
+- Actionable insights extraction
+- Professional report formatting
+
+```python
+class SummarizationAgent:
+    async def create_summary(self, workflow_state: WorkflowState) -> Dict[str, Any]:
+        # Create comprehensive summary from all analysis data
+        summary_input = self._prepare_summary_input(workflow_state)
+        result = await self.llm.ainvoke([
+            SystemMessage(content=self.prompt.messages[0].content),
+            HumanMessage(content=f"Create summary: {summary_input}")
+        ])
+        return await self._process_summary_result(result, workflow_state)
+```
+
+### 🔧 LangGraph Workflow Integration
+
+Each agent integrates seamlessly with the LangGraph workflow:
+
+```python
+# LangGraph workflow definition
+workflow = StateGraph(GraphState)
+workflow.add_node("initialize", self._initialize_workflow)
+workflow.add_node("ticker_lookup", self._ticker_lookup_step)
+workflow.add_node("research", self._research_step)
+workflow.add_node("analysis", self._analysis_step)
+workflow.add_node("sentiment", self._sentiment_step)
+workflow.add_node("summarization", self._summarization_step)
+workflow.add_node("finalize", self._finalize_workflow)
+
+# Sequential execution flow
+workflow.set_entry_point("initialize")
+workflow.add_edge("initialize", "ticker_lookup")
+workflow.add_edge("ticker_lookup", "research")
+workflow.add_edge("research", "analysis")
+workflow.add_edge("analysis", "sentiment")
+workflow.add_edge("sentiment", "summarization")
+workflow.add_edge("summarization", "finalize")
+workflow.add_edge("finalize", END)
+
+# Compile and execute
+app = workflow.compile()
+result = await app.ainvoke(initial_state)
+```
+
+### 🔄 Workflow Execution Flow
+
+1. **Initialize**: Set up workflow state and prepare for execution
+2. **Ticker Lookup**: Resolve company name to ticker symbol using AI
+3. **Research**: Fetch stock data and news articles
+4. **Analysis**: Perform technical analysis on stock data
+5. **Sentiment**: Analyze news sentiment and extract themes
+6. **Summarization**: Create comprehensive final summary
+7. **Finalize**: Clean up and prepare final output
+
+### 🧠 AI Integration Details
+
+- **GPT-4 Model**: All agents use GPT-4 for intelligent analysis
+- **Specialized Prompts**: Each agent has custom prompts for optimal performance
+- **Temperature Control**: Different temperature settings for different tasks
+- **Memory Management**: Conversation history for context retention
+- **Error Recovery**: Automatic retry logic with exponential backoff
+
+### 📊 Data Flow
+
+```
+User Query → Ticker Lookup → Stock Data + News Data → Analysis + Sentiment → Final Summary
+```
+
+Each step enriches the workflow state with additional data:
+- **Ticker & Company**: Resolved identifiers
+- **Stock Data**: Price history, movements, technical indicators
+- **News Data**: Recent articles, publication dates, sources
+- **Analysis Results**: Technical insights, trends, support/resistance
+- **Sentiment Results**: Overall sentiment, themes, market impact
+- **Final Summary**: Comprehensive analysis report
+
+## 🔧 Agent Data Models
+
+### 📊 Core Data Models
+```python
+class AgentState(BaseModel):
+    """Global state shared across all agents"""
+    session_id: str
+    query: str
+    ticker: Optional[str] = None
+    company_name: Optional[str] = None
+    collected_data: Optional[CollectedData] = None
+    analyses: Dict[str, Any] = Field(default_factory=dict)
+    summary: Optional[StockSummary] = None
+    metadata: AgentMetadata = Field(default_factory=AgentMetadata)
+
+374|
 class TechnicalAnalysisAgent(BaseAgent):
     def __init__(self):
         self.indicators = TechnicalIndicators()

@@ -10,7 +10,6 @@ import uuid
 import logging
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -20,7 +19,11 @@ from models import (
     StockSummary, create_agent_task, create_workflow_state,
     CompanyInfo, StockMovement, NewsArticle, SentimentType, TrendDirection
 )
-from .agents import AgentFactory, BaseAgent
+from .ticker_lookup_agent import TickerLookupAgent
+from .research_agent import ResearchAgent
+from .analysis_agent import AnalysisAgent
+from .sentiment_agent import SentimentAgent
+from .summarization_agent import SummarizationAgent
 from utils import log_info, log_error, get_env_variable
 from services.stock_data import StockDataFetcher
 from services.ticker_lookup import TickerLookup
@@ -75,10 +78,11 @@ class CoordinatorAgent:
         )
         
         # Initialize specialized agents
-        self.research_agent = AgentFactory.create_agent(AgentType.RESEARCH, config)
-        self.analysis_agent = AgentFactory.create_agent(AgentType.ANALYSIS, config)
-        self.sentiment_agent = AgentFactory.create_agent(AgentType.SENTIMENT, config)
-        self.summarization_agent = AgentFactory.create_agent(AgentType.SUMMARIZATION, config)
+        self.ticker_lookup_agent = TickerLookupAgent(config)
+        self.research_agent = ResearchAgent(config)
+        self.analysis_agent = AnalysisAgent(config)
+        self.sentiment_agent = SentimentAgent(config)
+        self.summarization_agent = SummarizationAgent(config)
         
         # Initialize direct data fetchers for fallback
         self.stock_fetcher = StockDataFetcher()
@@ -88,11 +92,8 @@ class CoordinatorAgent:
         # Build the workflow graph
         self.workflow = self._build_workflow()
         
-        # Memory saver for state persistence
-        self.memory = MemorySaver()
-        
-        # Compile the graph
-        self.app = self.workflow.compile(checkpointer=self.memory)
+        # Compile the graph without session persistence
+        self.app = self.workflow.compile()
     
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow."""
@@ -101,6 +102,7 @@ class CoordinatorAgent:
         
         # Add nodes (workflow steps)
         workflow.add_node("initialize", self._initialize_workflow)
+        workflow.add_node("ticker_lookup", self._ticker_lookup_step)
         workflow.add_node("research", self._research_step)
         workflow.add_node("analysis", self._analysis_step)
         workflow.add_node("sentiment", self._sentiment_step)
@@ -109,7 +111,8 @@ class CoordinatorAgent:
         
         # Define the workflow edges
         workflow.set_entry_point("initialize")
-        workflow.add_edge("initialize", "research")
+        workflow.add_edge("initialize", "ticker_lookup")
+        workflow.add_edge("ticker_lookup", "research")
         workflow.add_edge("research", "analysis")
         workflow.add_edge("analysis", "sentiment")
         workflow.add_edge("sentiment", "summarization")
@@ -118,16 +121,16 @@ class CoordinatorAgent:
         
         return workflow
     
-    async def process_query(self, user_query: str, session_id: str = None) -> Dict[str, Any]:
+    async def process_query(self, user_query: str) -> Dict[str, Any]:
         """Process a user query through the complete workflow."""
-        if not session_id:
-            session_id = str(uuid.uuid4())
+        # Generate a workflow ID for tracking
+        workflow_id = str(uuid.uuid4())
         
         # Initialize the graph state
         initial_state = {
             "user_query": user_query,
-            "session_id": session_id,
-            "workflow_state": create_workflow_state(session_id, user_query),
+            "session_id": workflow_id,
+            "workflow_state": create_workflow_state(workflow_id, user_query),
             "research_response": None,
             "analysis_response": None,
             "sentiment_response": None,
@@ -141,13 +144,11 @@ class CoordinatorAgent:
         
         try:
             # Execute the workflow
-            config = {"configurable": {"thread_id": session_id}}
-            result = await self.app.ainvoke(initial_state, config=config)
+            result = await self.app.ainvoke(initial_state)
             
             # Return the final result
             return {
                 "success": True,
-                "session_id": session_id,
                 "final_summary": result.get("final_summary"),
                 "workflow_state": result.get("workflow_state"),
                 "step_count": result.get("step_count", 0),
@@ -160,29 +161,46 @@ class CoordinatorAgent:
             
             return {
                 "success": False,
-                "session_id": session_id,
                 "error": error_msg,
                 "errors": [error_msg]
             }
       
     async def _initialize_workflow(self, state: GraphState) -> GraphState:
-        """Initialize the workflow and resolve company/ticker information."""
+        """Initialize the workflow."""
         log_info(f"Initializing workflow for query: {state['user_query']}")
         
         state["current_step"] = "initialize"
         state["step_count"] += 1
         
-        # Extract company/ticker information from the query
-        company_info = await self._extract_company_info(state["user_query"])
+        # Basic initialization - ticker lookup will be handled in the next step
+        state["workflow_state"].update_timestamp()
         
-        if company_info:
-            state["workflow_state"].ticker = company_info.get("ticker")
-            state["workflow_state"].company_name = company_info.get("company_name")
-            state["workflow_state"].update_timestamp()
+        return state
+    
+    async def _ticker_lookup_step(self, state: GraphState) -> GraphState:
+        """Execute ticker lookup step using the dedicated agent."""
+        log_info("Executing ticker lookup step")
+        
+        state["current_step"] = "ticker_lookup"
+        state["step_count"] += 1
+        
+        try:
+            # Use the ticker lookup agent to resolve company/ticker
+            result = await self.ticker_lookup_agent.resolve_company_ticker(state["user_query"])
             
-            log_info(f"Resolved: {company_info.get('company_name')} ({company_info.get('ticker')})")
-        else:
-            error_msg = "Could not resolve company/ticker from query"
+            if result["success"]:
+                state["workflow_state"].ticker = result.get("ticker")
+                state["workflow_state"].company_name = result.get("company_name")
+                state["workflow_state"].update_timestamp()
+                
+                log_info(f"Resolved: {result.get('company_name')} ({result.get('ticker')})")
+            else:
+                error_msg = f"Could not resolve company/ticker: {result.get('error')}"
+                state["errors"].append(error_msg)
+                log_error(error_msg)
+        
+        except Exception as e:
+            error_msg = f"Ticker lookup step failed: {str(e)}"
             state["errors"].append(error_msg)
             log_error(error_msg)
         
@@ -201,36 +219,51 @@ class CoordinatorAgent:
             return state
         
         try:
-            # Fetch stock data directly (more reliable than through agent)
-            stock_data = await self._fetch_stock_data(
-                state["workflow_state"].ticker,
-                state["workflow_state"].company_name
-            )
+            # Use the research agent to fetch data
+            result = await self.research_agent.research_company(state["user_query"])
             
-            if stock_data:
-                state["workflow_state"].stock_data = stock_data
-                log_info(f"Stock data fetched for {state['workflow_state'].ticker}")
-            
-            # Fetch news data
-            news_data = await self._fetch_news_data(
-                state["workflow_state"].company_name,
-                state["workflow_state"].ticker
-            )
-            
-            if news_data:
-                state["workflow_state"].news_data = news_data
-                log_info(f"News data fetched: {len(news_data.articles)} articles")
-            
-            # Create successful research response
-            state["research_response"] = AgentResponse(
-                agent_type=AgentType.RESEARCH,
-                success=True,
-                message="Research completed successfully",
-                data={
-                    "stock_data_available": stock_data is not None,
-                    "news_data_available": news_data is not None
-                }
-            )
+            if result["success"]:
+                # Fetch stock data directly (more reliable than through agent)
+                stock_data = await self._fetch_stock_data(
+                    state["workflow_state"].ticker,
+                    state["workflow_state"].company_name
+                )
+                
+                if stock_data:
+                    state["workflow_state"].stock_data = stock_data
+                    log_info(f"Stock data fetched for {state['workflow_state'].ticker}")
+                
+                # Fetch news data
+                news_data = await self._fetch_news_data(
+                    state["workflow_state"].company_name,
+                    state["workflow_state"].ticker
+                )
+                
+                if news_data:
+                    state["workflow_state"].news_data = news_data
+                    log_info(f"News data fetched: {len(news_data.articles)} articles")
+                
+                # Create successful research response
+                state["research_response"] = AgentResponse(
+                    agent_type=AgentType.RESEARCH,
+                    success=True,
+                    message="Research completed successfully",
+                    data={
+                        "stock_data_available": stock_data is not None,
+                        "news_data_available": news_data is not None
+                    }
+                )
+            else:
+                error_msg = f"Research failed: {result.get('error')}"
+                state["errors"].append(error_msg)
+                log_error(error_msg)
+                
+                state["research_response"] = AgentResponse(
+                    agent_type=AgentType.RESEARCH,
+                    success=False,
+                    message=error_msg,
+                    error=result.get("error")
+                )
             
         except Exception as e:
             error_msg = f"Research step failed: {str(e)}"
@@ -259,24 +292,33 @@ class CoordinatorAgent:
             return state
         
         try:
-            # Create analysis task
-            task = create_agent_task(
-                AgentType.ANALYSIS,
-                "Perform technical analysis on stock data",
-                {"stock_data": state["workflow_state"].stock_data}
-            )
+            # Use the analysis agent to analyze stock data
+            result = await self.analysis_agent.analyze_stock(state["workflow_state"].stock_data)
             
-            # Execute analysis
-            response = await self.analysis_agent.execute_task(task, state["workflow_state"])
-            
-            if response.success and response.data:
+            if result["success"]:
                 # Extract technical analysis from response
-                tech_analysis = response.data.get("technical_analysis")
+                tech_analysis = result["data"].get("technical_analysis")
                 if tech_analysis:
                     state["workflow_state"].technical_analysis = tech_analysis
                     log_info("Technical analysis completed")
-            
-            state["analysis_response"] = response
+                
+                state["analysis_response"] = AgentResponse(
+                    agent_type=AgentType.ANALYSIS,
+                    success=True,
+                    message="Analysis completed successfully",
+                    data=result["data"]
+                )
+            else:
+                error_msg = f"Analysis failed: {result.get('error')}"
+                state["errors"].append(error_msg)
+                log_error(error_msg)
+                
+                state["analysis_response"] = AgentResponse(
+                    agent_type=AgentType.ANALYSIS,
+                    success=False,
+                    message=error_msg,
+                    error=result.get("error")
+                )
             
         except Exception as e:
             error_msg = f"Analysis step failed: {str(e)}"
@@ -305,24 +347,33 @@ class CoordinatorAgent:
             return state
         
         try:
-            # Create sentiment task
-            task = create_agent_task(
-                AgentType.SENTIMENT,
-                "Analyze sentiment of news articles",
-                {"news_data": state["workflow_state"].news_data}
-            )
+            # Use the sentiment agent to analyze news data
+            result = await self.sentiment_agent.analyze_sentiment(state["workflow_state"].news_data)
             
-            # Execute sentiment analysis
-            response = await self.sentiment_agent.execute_task(task, state["workflow_state"])
-            
-            if response.success and response.data:
+            if result["success"]:
                 # Extract sentiment analysis from response
-                sentiment_analysis = response.data.get("sentiment_analysis")
+                sentiment_analysis = result["data"].get("sentiment_analysis")
                 if sentiment_analysis:
                     state["workflow_state"].sentiment_analysis = sentiment_analysis
                     log_info("Sentiment analysis completed")
-            
-            state["sentiment_response"] = response
+                
+                state["sentiment_response"] = AgentResponse(
+                    agent_type=AgentType.SENTIMENT,
+                    success=True,
+                    message="Sentiment analysis completed successfully",
+                    data=result["data"]
+                )
+            else:
+                error_msg = f"Sentiment analysis failed: {result.get('error')}"
+                state["errors"].append(error_msg)
+                log_error(error_msg)
+                
+                state["sentiment_response"] = AgentResponse(
+                    agent_type=AgentType.SENTIMENT,
+                    success=False,
+                    message=error_msg,
+                    error=result.get("error")
+                )
             
         except Exception as e:
             error_msg = f"Sentiment step failed: {str(e)}"
@@ -346,24 +397,33 @@ class CoordinatorAgent:
         state["step_count"] += 1
         
         try:
-            # Create summarization task
-            task = create_agent_task(
-                AgentType.SUMMARIZATION,
-                "Create comprehensive stock summary",
-                {"workflow_state": state["workflow_state"]}
-            )
+            # Use the summarization agent to create summary
+            result = await self.summarization_agent.create_summary(state["workflow_state"])
             
-            # Execute summarization
-            response = await self.summarization_agent.execute_task(task, state["workflow_state"])
-            
-            if response.success and response.data:
+            if result["success"]:
                 # Extract stock summary from response
-                stock_summary = response.data.get("stock_summary")
+                stock_summary = result["data"].get("stock_summary")
                 if stock_summary:
                     state["final_summary"] = stock_summary
                     log_info("Summarization completed")
-            
-            state["summary_response"] = response
+                
+                state["summary_response"] = AgentResponse(
+                    agent_type=AgentType.SUMMARIZATION,
+                    success=True,
+                    message="Summarization completed successfully",
+                    data=result["data"]
+                )
+            else:
+                error_msg = f"Summarization failed: {result.get('error')}"
+                state["errors"].append(error_msg)
+                log_error(error_msg)
+                
+                state["summary_response"] = AgentResponse(
+                    agent_type=AgentType.SUMMARIZATION,
+                    success=False,
+                    message=error_msg,
+                    error=result.get("error")
+                )
             
         except Exception as e:
             error_msg = f"Summarization step failed: {str(e)}"
@@ -538,22 +598,3 @@ class CoordinatorAgent:
         except Exception as e:
             log_error(f"Error fetching news data: {str(e)}")
             return None
-
-if __name__ == "__main__":
-    # Example usage of the coordinator
-    import asyncio
-    
-    async def test_coordinator():
-        coordinator = CoordinatorAgent()
-        
-        # Test query
-        result = await coordinator.process_query("Tell me about Apple stock")
-        
-        print(f"Success: {result['success']}")
-        if result['success']:
-            print(f"Final Summary: {result.get('final_summary', {}).get('executive_summary', 'No summary')}")
-        else:
-            print(f"Errors: {result.get('errors', [])}")
-    
-    # Run the test
-    asyncio.run(test_coordinator()) 

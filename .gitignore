@@ -1,9 +1,32 @@
+# Environment variables
 .env
+
+# Python
+__pycache__/
+build/
+
+# Virtual environments
 .venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs
 *.log
+
+# Database
+*.db
+
+# Testing
+.pytest_cache/
+
+# AI/ML specific
+data/
+
+# Temporary files
+*.tmp
