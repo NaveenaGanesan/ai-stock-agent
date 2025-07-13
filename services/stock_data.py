@@ -170,29 +170,4 @@ class StockDataFetcher:
             log_error(f"Error validating ticker {ticker}: {str(e)}")
             return False
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Initialize the fetcher
-    fetcher = StockDataFetcher()
-    
-    # Test with a known ticker
-    test_ticker = "AAPL"
-    print(f"Testing with ticker: {test_ticker}")
-    
-    # Test ticker validation
-    is_valid = fetcher.validate_ticker(test_ticker)
-    print(f"Ticker validation: {is_valid}")
-    
-    if is_valid:
-        # Get comprehensive data
-        data = fetcher.get_comprehensive_data(test_ticker)
-        
-        if data:
-            print(f"\nCompany: {data.get('name', 'N/A')}")
-            print(f"Current Price: {data.get('movements', {}).get('formatted_price', 'N/A')}")
-            print(f"Change: {data.get('movements', {}).get('formatted_change', 'N/A')}")
-            print(f"Trend: {data.get('movements', {}).get('trend', 'N/A')}")
-        else:
-            print("Failed to fetch data")
-    else:
-        print("Invalid ticker") 
+ 

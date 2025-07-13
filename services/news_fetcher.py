@@ -337,35 +337,4 @@ class NewsFetcher:
             log_error(f"Error getting market news: {str(e)}")
             return []
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Initialize the news fetcher
-    fetcher = NewsFetcher()
-    
-    # Test with a known company
-    test_company = "Apple"
-    test_ticker = "AAPL"
-    
-    print(f"Testing news fetch for {test_company} ({test_ticker})")
-    
-    # Get company news
-    news = fetcher.get_company_news(test_company, test_ticker, limit=3)
-    
-    print(f"\nFound {len(news)} articles:")
-    for i, article in enumerate(news, 1):
-        print(f"\n{i}. {article.get('title', 'No Title')}")
-        print(f"   Source: {article.get('source', 'Unknown')}")
-        print(f"   Date: {article.get('published_date', 'Unknown')}")
-        print(f"   Summary: {article.get('summary', 'No summary')[:100]}...")
-        print(f"   URL: {article.get('url', 'No URL')}")
-    
-    # Test market news
-    print("\n" + "="*50)
-    print("Testing general market news:")
-    market_news = fetcher.get_market_news(limit=3)
-    
-    print(f"\nFound {len(market_news)} market articles:")
-    for i, article in enumerate(market_news, 1):
-        print(f"\n{i}. {article.get('title', 'No Title')}")
-        print(f"   Source: {article.get('source', 'Unknown')}")
-        print(f"   Date: {article.get('published_date', 'Unknown')}") 
+ 

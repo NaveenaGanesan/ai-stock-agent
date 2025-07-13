@@ -4,6 +4,15 @@ Contains all Pydantic models and data structures.
 """
 
 from .models import StockAgentModels
+from .api_models import (
+    AnalysisRequest,
+    BatchAnalysisRequest,
+    TickerValidationRequest,
+    AnalysisResponse,
+    BatchAnalysisResponse,
+    TickerValidationResponse,
+    HealthResponse,
+)
 
 # Convenience imports for easy access
 from .models import (
@@ -86,6 +95,14 @@ __all__ = [
     # Output Models
     'StockSummary',
     'SystemConfig',
+    # API Models
+    'AnalysisRequest',
+    'BatchAnalysisRequest',
+    'TickerValidationRequest',
+    'AnalysisResponse',
+    'BatchAnalysisResponse',
+    'TickerValidationResponse',
+    'HealthResponse',
     # Factory functions
     'create_agent_task',
     'create_workflow_state',

@@ -10,11 +10,6 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def setup_environment():
-    """Load environment variables from .env file."""
-    from dotenv import load_dotenv
-    load_dotenv()
     
 def get_env_variable(var_name: str, default: Optional[str] = None) -> Optional[str]:
     """Get environment variable with optional default."""

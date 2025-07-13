@@ -271,35 +271,4 @@ class TickerLookup:
         except Exception as e:
             log_error(f"Error adding mapping {company_name} -> {ticker}: {str(e)}")
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Initialize the lookup
-    lookup = TickerLookup()
-    
-    # Test cases
-    test_cases = [
-        "Apple",
-        "Tesla",
-        "Microsoft",
-        "GOOGL",
-        "Amazon",
-        "Meta",
-        "AAPL",
-        "Unknown Company"
-    ]
-    
-    print("Testing ticker lookup:")
-    for test in test_cases:
-        ticker = lookup.lookup_ticker(test)
-        print(f"{test} -> {ticker}")
-    
-    print("\nTesting company name lookup:")
-    test_tickers = ["AAPL", "TSLA", "MSFT", "GOOGL"]
-    for ticker in test_tickers:
-        name = lookup.get_company_name(ticker)
-        print(f"{ticker} -> {name}")
-    
-    print("\nTesting suggestions:")
-    suggestions = lookup.suggest_tickers("app")
-    for suggestion in suggestions:
-        print(f"  {suggestion['ticker']}: {suggestion['name']}") 
+ 
