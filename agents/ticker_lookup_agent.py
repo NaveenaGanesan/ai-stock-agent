@@ -25,10 +25,6 @@ from services.ticker_lookup import TickerLookup
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# ===============================================================================
-# TICKER LOOKUP TOOLS
-# ===============================================================================
-
 class TickerLookupTool(BaseTool):
     """Tool for looking up ticker symbols."""
     name: str = "ticker_lookup"
@@ -111,16 +107,11 @@ class CompanyValidationTool(BaseTool):
         """Async version of company validation."""
         return self._run(query)
 
-# ===============================================================================
-# TICKER LOOKUP AGENT
-# ===============================================================================
-
 class TickerLookupAgent:
     """Agent responsible for ticker lookup and company resolution."""
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self):
         """Initialize the ticker lookup agent."""
-        self.config = config or {}
         self.agent_type = AgentType.COORDINATOR  # Using coordinator type as placeholder
         self.state = AgentState()
         self.memory = ConversationBufferMemory(return_messages=True)
@@ -362,7 +353,3 @@ Be concise but thorough in your analysis."""
         if data:
             self.state.context.update(data)
         self.state.context["last_updated"] = datetime.now()
-
-# ===============================================================================
-# EXAMPLE USAGE
-# ===============================================================================

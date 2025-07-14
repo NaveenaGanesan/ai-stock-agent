@@ -32,10 +32,6 @@ from services.news_fetcher import NewsFetcher
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# ===============================================================================
-# LANGGRAPH STATE DEFINITION
-# ===============================================================================
-
 class GraphState(TypedDict):
     """State definition for LangGraph workflow."""
     # Input
@@ -62,15 +58,10 @@ class GraphState(TypedDict):
     # Messages for LLM context
     messages: List[BaseMessage]
 
-# ===============================================================================
-# COORDINATOR AGENT
-# ===============================================================================
-
 class CoordinatorAgent:
     """Main coordinator agent that orchestrates the entire workflow."""
     
-    def __init__(self, config: Dict[str, Any] = None):
-        self.config = config or {}
+    def __init__(self):
         self.llm = ChatOpenAI(
             model="gpt-4",
             temperature=0.3,  # Lower temperature for more consistent coordination
@@ -78,11 +69,11 @@ class CoordinatorAgent:
         )
         
         # Initialize specialized agents
-        self.ticker_lookup_agent = TickerLookupAgent(config)
-        self.research_agent = ResearchAgent(config)
-        self.analysis_agent = AnalysisAgent(config)
-        self.sentiment_agent = SentimentAgent(config)
-        self.summarization_agent = SummarizationAgent(config)
+        self.ticker_lookup_agent = TickerLookupAgent()
+        self.research_agent = ResearchAgent()
+        self.analysis_agent = AnalysisAgent()
+        self.sentiment_agent = SentimentAgent()
+        self.summarization_agent = SummarizationAgent()
         
         # Initialize direct data fetchers for fallback
         self.stock_fetcher = StockDataFetcher()
@@ -466,8 +457,7 @@ class CoordinatorAgent:
             log_error(f"Workflow errors: {'; '.join(state['errors'])}")
         
         return state
-    
-   
+
     async def _extract_company_info(self, query: str) -> Optional[Dict[str, Any]]:
         """Extract company/ticker information from user query."""
         try:
