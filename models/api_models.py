@@ -24,12 +24,6 @@ class BatchAnalysisRequest(BaseModel):
         description="Analysis options"
     )
 
-
-class TickerValidationRequest(BaseModel):
-    """Request model for ticker validation"""
-    company_name: str = Field(..., description="Company name to validate")
-
-
 class AnalysisResponse(BaseModel):
     """Response model for stock analysis"""
     success: bool
@@ -45,15 +39,6 @@ class BatchAnalysisResponse(BaseModel):
     success: bool
     results: List[AnalysisResponse]
     metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class TickerValidationResponse(BaseModel):
-    """Response model for ticker validation"""
-    valid: bool
-    ticker: Optional[str] = None
-    company_name: Optional[str] = None
-    suggestions: List[str] = Field(default_factory=list)
-
 
 class HealthResponse(BaseModel):
     """Health check response"""

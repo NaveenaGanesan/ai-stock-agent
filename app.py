@@ -17,10 +17,8 @@ from services.stock_summary_service import StockSummaryService
 from models import (
     AnalysisRequest,
     BatchAnalysisRequest,
-    TickerValidationRequest,
     AnalysisResponse,
     BatchAnalysisResponse,
-    TickerValidationResponse,
     HealthResponse,
 )
 from utils import log_info, log_error
@@ -214,46 +212,6 @@ async def batch_analyze_stocks(request: BatchAnalysisRequest):
     except Exception as e:
         log_error(f"Batch analysis endpoint error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
-
-@app.post("/validate-ticker", response_model=TickerValidationResponse)
-async def validate_ticker(request: TickerValidationRequest):
-    """Validate a company name and return ticker information."""
-    global service
-    
-    if not service:
-        raise HTTPException(status_code=500, detail="Service not initialized")
-    
-    try:
-        log_info(f"Received ticker validation request for: {request.company_name}")
-        
-        result = await service.validate_company(request.company_name)
-        
-        return TickerValidationResponse(
-            valid=result.get("valid", False),
-            ticker=result.get("ticker"),
-            company_name=result.get("company_name"),
-            suggestions=result.get("suggestions", [])
-        )
-        
-    except Exception as e:
-        log_error(f"Ticker validation endpoint error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ticker validation failed: {str(e)}")
-
-@app.get("/supported-companies")
-async def get_supported_companies():
-    """Get list of supported companies."""
-    global service
-    
-    if not service:
-        raise HTTPException(status_code=500, detail="Service not initialized")
-    
-    try:
-        companies = await service.get_supported_companies()
-        return {"companies": companies}
-        
-    except Exception as e:
-        log_error(f"Supported companies endpoint error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get supported companies: {str(e)}")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
