@@ -3,13 +3,13 @@ Utility functions for the stock summary agent.
 """
 import os
 import re
+import inspect
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
     
 def get_env_variable(var_name: str, default: Optional[str] = None) -> Optional[str]:
     """Get environment variable with optional default."""
@@ -63,9 +63,17 @@ def truncate_text(text: str, max_length: int = 200) -> str:
     return text[:max_length-3] + "..."
 
 def log_info(message: str):
-    """Log info message."""
+    """Log info message with caller's module name."""
+    # Get the caller's frame to determine the calling module
+    frame = inspect.currentframe().f_back
+    module_name = frame.f_globals.get('__name__', 'unknown')
+    logger = logging.getLogger(module_name)
     logger.info(message)
 
 def log_error(message: str):
-    """Log error message."""
+    """Log error message with caller's module name."""
+    # Get the caller's frame to determine the calling module
+    frame = inspect.currentframe().f_back
+    module_name = frame.f_globals.get('__name__', 'unknown')
+    logger = logging.getLogger(module_name)
     logger.error(message) 

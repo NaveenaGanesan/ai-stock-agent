@@ -110,6 +110,8 @@ class ResearchAgent:
         # Initialize direct services for fallback
         self.stock_fetcher = StockDataFetcher()
         self.news_fetcher = NewsFetcher()
+
+        log_info("ResearchAgent initialized successfully")
     
     def _create_tools(self) -> List[BaseTool]:
         """Create research-specific tools."""

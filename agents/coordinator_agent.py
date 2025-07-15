@@ -26,7 +26,6 @@ from .sentiment_agent import SentimentAgent
 from .summarization_agent import SummarizationAgent
 from utils import log_info, log_error, get_env_variable
 from services.stock_data import StockDataFetcher
-
 from services.news_fetcher import NewsFetcher
 
 # Configure logging
@@ -62,6 +61,7 @@ class CoordinatorAgent:
     """Main coordinator agent that orchestrates the entire workflow."""
     
     def __init__(self):
+        log_info("Initializing CoordinatorAgent")
         self.llm = ChatOpenAI(
             model="gpt-4",
             temperature=0.3,  # Lower temperature for more consistent coordination

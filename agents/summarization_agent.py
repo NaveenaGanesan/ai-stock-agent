@@ -29,9 +29,8 @@ logger = logging.getLogger(__name__)
 class SummarizationAgent:
     """Agent responsible for creating final summaries."""
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self):
         """Initialize the summarization agent."""
-        self.config = config or {}
         self.agent_type = AgentType.SUMMARIZATION
         self.state = AgentState(agent_type=self.agent_type)
         self.memory = ConversationBufferMemory(return_messages=True)
@@ -39,12 +38,14 @@ class SummarizationAgent:
         # Initialize LLM
         self.llm = ChatOpenAI(
             model="gpt-4",
-            temperature=self.config.get("temperature", 0.6),
-            max_tokens=self.config.get("max_tokens", 1500),
+            temperature=0.6,
+            max_tokens=1500,
             openai_api_key=get_env_variable("OPENAI_API_KEY")
         )
         
         self.prompt = self._create_prompt()
+
+        log_info("SummarizationAgent initialized successfully")
     
     def _create_prompt(self) -> ChatPromptTemplate:
         """Create summarization agent prompt."""

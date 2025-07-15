@@ -35,7 +35,7 @@ class TickerLookupAgent:
             openai_api_key=get_env_variable("OPENAI_API_KEY")
         )
         
-        log_info("TickerLookupAgent initialized with AI-powered resolution")
+        log_info("TickerLookupAgent initialized successfully")
     
     async def resolve_company_ticker(self, query: str) -> Dict[str, Any]:
         """
