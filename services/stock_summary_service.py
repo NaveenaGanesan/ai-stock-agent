@@ -6,7 +6,7 @@ Handles API requests and routes them to the appropriate agents.
 from datetime import datetime
 from typing import Dict, List, Any
 
-from agents.coordinator import CoordinatorAgent
+from agents.coordinator_agent import CoordinatorAgent
 from utils import log_info, log_error
 
 

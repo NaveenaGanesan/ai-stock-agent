@@ -26,7 +26,7 @@ from .sentiment_agent import SentimentAgent
 from .summarization_agent import SummarizationAgent
 from utils import log_info, log_error, get_env_variable
 from services.stock_data import StockDataFetcher
-from services.ticker_lookup import TickerLookup
+
 from services.news_fetcher import NewsFetcher
 
 # Configure logging
@@ -77,7 +77,6 @@ class CoordinatorAgent:
         
         # Initialize direct data fetchers for fallback
         self.stock_fetcher = StockDataFetcher()
-        self.ticker_lookup = TickerLookup()
         self.news_fetcher = NewsFetcher()
         
         # Build the workflow graph
@@ -491,13 +490,25 @@ class CoordinatorAgent:
             if "Ticker:" in response_text:
                 ticker = response_text.split("Ticker:")[1].split("\n")[0].strip()
             
-            # If we have a company name, try to lookup ticker
+            # If we have a company name, try to lookup ticker using AI agent
             if company_name and not ticker:
-                ticker = self.ticker_lookup.lookup_ticker(company_name)
+                try:
+                    result = await self.ticker_lookup_agent.resolve_company_ticker(company_name)
+                    if result.get('ticker'):
+                        ticker = result['ticker']
+                        company_name = result.get('company_name', company_name)
+                except Exception as e:
+                    log_error(f"Error resolving ticker with AI agent: {str(e)}")
+                    # Continue without ticker if AI lookup fails
             
-            # If we have a ticker, verify it and get company name
-            if ticker:
-                company_name = self.ticker_lookup.get_company_name(ticker) or company_name
+            # If we have a ticker, validate it using AI agent
+            if ticker and not company_name:
+                try:
+                    result = await self.ticker_lookup_agent.validate_company(ticker)
+                    if result.get('is_valid'):
+                        company_name = result.get('company_name', company_name)
+                except Exception as e:
+                    log_error(f"Error validating ticker with AI agent: {str(e)}")
             
             if ticker and company_name:
                 return {

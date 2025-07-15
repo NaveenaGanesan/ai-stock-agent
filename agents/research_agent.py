@@ -22,24 +22,20 @@ from models import (
 )
 from utils import log_info, log_error, get_env_variable
 from services.stock_data import StockDataFetcher
-from services.ticker_lookup import TickerLookup
 from services.news_fetcher import NewsFetcher
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# ===============================================================================
-# RESEARCH TOOLS
-# ===============================================================================
-
 class StockDataTool(BaseTool):
     """Tool for fetching stock data."""
     name: str = "stock_data_fetcher"
     description: str = "Fetch comprehensive stock data for a given ticker symbol"
+    fetcher: StockDataFetcher = None
     
     def __init__(self):
         super().__init__()
-        self.fetcher = StockDataFetcher()
+        object.__setattr__(self, 'fetcher', StockDataFetcher())
     
     def _run(self, ticker: str, days: int = 7) -> Dict[str, Any]:
         """Run the stock data fetcher."""
@@ -56,10 +52,11 @@ class NewsDataTool(BaseTool):
     """Tool for fetching news data."""
     name: str = "news_data_fetcher"
     description: str = "Fetch recent news articles for a given company and ticker"
+    fetcher: NewsFetcher = None
     
     def __init__(self):
         super().__init__()
-        self.fetcher = NewsFetcher()
+        object.__setattr__(self, 'fetcher', NewsFetcher())
     
     def _run(self, company_name: str, ticker: str, limit: int = 5) -> Dict[str, Any]:
         """Run the news data fetcher."""
@@ -72,59 +69,20 @@ class NewsDataTool(BaseTool):
         """Async version of news data fetcher."""
         return self._run(company_name, ticker, limit)
 
-class TickerLookupTool(BaseTool):
-    """Tool for looking up ticker symbols."""
-    name: str = "ticker_lookup"
-    description: str = "Look up stock ticker symbol for a given company name"
-    
-    def __init__(self):
-        super().__init__()
-        self.lookup = TickerLookup()
-    
-    def _run(self, company_name: str) -> Dict[str, Any]:
-        """Run the ticker lookup tool."""
-        try:
-            ticker = self.lookup.lookup_ticker(company_name)
-            if ticker:
-                company_info = self.lookup.get_company_name(ticker)
-                return {
-                    "success": True,
-                    "ticker": ticker,
-                    "company_name": company_info
-                }
-            else:
-                suggestions = self.lookup.suggest_tickers(company_name, limit=5)
-                return {
-                    "success": False,
-                    "error": f"No ticker found for {company_name}",
-                    "suggestions": suggestions
-                }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    async def _arun(self, company_name: str) -> Dict[str, Any]:
-        """Async version of ticker lookup."""
-        return self._run(company_name)
-
-# ===============================================================================
-# RESEARCH AGENT
-# ===============================================================================
-
 class ResearchAgent:
     """Agent responsible for data collection and research."""
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self):
         """Initialize the research agent."""
-        self.config = config or {}
         self.agent_type = AgentType.RESEARCH
-        self.state = AgentState()
+        self.state = AgentState(agent_type=self.agent_type)
         self.memory = ConversationBufferMemory(return_messages=True)
         
         # Initialize LLM
         self.llm = ChatOpenAI(
             model="gpt-4",
-            temperature=self.config.get("temperature", 0.3),
-            max_tokens=self.config.get("max_tokens", 1000),
+            temperature=0.3,
+            max_tokens=1000,
             openai_api_key=get_env_variable("OPENAI_API_KEY")
         )
         
@@ -152,14 +110,12 @@ class ResearchAgent:
         # Initialize direct services for fallback
         self.stock_fetcher = StockDataFetcher()
         self.news_fetcher = NewsFetcher()
-        self.ticker_lookup = TickerLookup()
     
     def _create_tools(self) -> List[BaseTool]:
         """Create research-specific tools."""
         return [
             StockDataTool(),
-            NewsDataTool(),
-            TickerLookupTool()
+            NewsDataTool()
         ]
     
     def _create_prompt(self) -> ChatPromptTemplate:
@@ -364,7 +320,3 @@ Format your responses with clear structure and include confidence levels for you
                 "success": False,
                 "error": str(e)
             }
-
-# ===============================================================================
-# EXAMPLE USAGE
-# ===============================================================================

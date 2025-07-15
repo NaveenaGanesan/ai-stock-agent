@@ -33,7 +33,7 @@ class SentimentAgent:
         """Initialize the sentiment agent."""
         self.config = config or {}
         self.agent_type = AgentType.SENTIMENT
-        self.state = AgentState()
+        self.state = AgentState(agent_type=self.agent_type)
         self.memory = ConversationBufferMemory(return_messages=True)
         
         # Initialize LLM

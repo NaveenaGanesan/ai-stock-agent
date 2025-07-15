@@ -1,180 +1,45 @@
 """
-Ticker Lookup Agent - Specialized agent for company name to ticker resolution
-Handles company name resolution, ticker validation, and company suggestions
+Ticker Lookup Agent - AI-powered company name to ticker resolution
+Uses AI directly to identify and resolve company names and ticker symbols
 """
 
 import asyncio
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
+import json
 
-from langchain.tools import BaseTool
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
-from pydantic import BaseModel, Field
 
-from models import (
-    AgentType, AgentTask, AgentState, WorkflowState, AgentResponse, 
-    TaskStatus, CompanyInfo
-)
+from models import AgentType, AgentState, TaskStatus
 from utils import log_info, log_error, get_env_variable
-from services.ticker_lookup import TickerLookup
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class TickerLookupTool(BaseTool):
-    """Tool for looking up ticker symbols."""
-    name: str = "ticker_lookup"
-    description: str = "Look up stock ticker symbol for a given company name"
-    
-    def __init__(self):
-        super().__init__()
-        self.ticker_lookup = TickerLookup()
-    
-    def _run(self, company_name: str) -> Dict[str, Any]:
-        """Run the ticker lookup tool."""
-        try:
-            ticker = self.ticker_lookup.lookup_ticker(company_name)
-            if ticker:
-                company_info = self.ticker_lookup.get_company_name(ticker)
-                return {
-                    "success": True,
-                    "ticker": ticker,
-                    "company_name": company_info,
-                    "confidence": "high"
-                }
-            else:
-                suggestions = self.ticker_lookup.suggest_tickers(company_name, limit=5)
-                return {
-                    "success": False,
-                    "error": f"No ticker found for {company_name}",
-                    "suggestions": suggestions
-                }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    async def _arun(self, company_name: str) -> Dict[str, Any]:
-        """Async version of ticker lookup."""
-        return self._run(company_name)
-
-class CompanyValidationTool(BaseTool):
-    """Tool for validating company names and tickers."""
-    name: str = "company_validation"
-    description: str = "Validate if a company name or ticker is supported"
-    
-    def __init__(self):
-        super().__init__()
-        self.ticker_lookup = TickerLookup()
-    
-    def _run(self, query: str) -> Dict[str, Any]:
-        """Run the company validation tool."""
-        try:
-            # First try as ticker
-            if len(query) <= 5 and query.isupper():
-                company_name = self.ticker_lookup.get_company_name(query)
-                if company_name:
-                    return {
-                        "success": True,
-                        "ticker": query,
-                        "company_name": company_name,
-                        "input_type": "ticker"
-                    }
-            
-            # Try as company name
-            ticker = self.ticker_lookup.lookup_ticker(query)
-            if ticker:
-                company_name = self.ticker_lookup.get_company_name(ticker)
-                return {
-                    "success": True,
-                    "ticker": ticker,
-                    "company_name": company_name,
-                    "input_type": "company_name"
-                }
-            
-            return {
-                "success": False,
-                "error": f"No match found for {query}",
-                "suggestions": self.ticker_lookup.suggest_tickers(query, limit=3)
-            }
-            
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    async def _arun(self, query: str) -> Dict[str, Any]:
-        """Async version of company validation."""
-        return self._run(query)
 
 class TickerLookupAgent:
-    """Agent responsible for ticker lookup and company resolution."""
+    """AI-powered agent for company name and ticker resolution."""
     
     def __init__(self):
         """Initialize the ticker lookup agent."""
-        self.agent_type = AgentType.COORDINATOR  # Using coordinator type as placeholder
-        self.state = AgentState()
-        self.memory = ConversationBufferMemory(return_messages=True)
+        self.agent_type = AgentType.COORDINATOR
+        self.state = AgentState(agent_type=self.agent_type)
         
-        # Initialize LLM
+        # Initialize LLM with low temperature for consistent results
         self.llm = ChatOpenAI(
             model="gpt-4",
-            temperature=0.1,  # Very low temperature for consistent ticker resolution
-            max_tokens=500,
+            temperature=0.1,
+            max_tokens=300,
             openai_api_key=get_env_variable("OPENAI_API_KEY")
         )
         
-        # Initialize tools
-        self.tools = self._create_tools()
-        self.prompt = self._create_prompt()
-        
-        # Initialize ticker lookup service
-        self.ticker_lookup = TickerLookup()
-    
-    def _create_tools(self) -> List[BaseTool]:
-        """Create ticker lookup specific tools."""
-        return [
-            TickerLookupTool(),
-            CompanyValidationTool()
-        ]
-    
-    def _create_prompt(self) -> ChatPromptTemplate:
-        """Create ticker lookup agent prompt."""
-        system_message = """You are a Ticker Lookup Agent specializing in resolving company names to stock ticker symbols.
-
-Your responsibilities:
-1. Parse user queries to extract company names or references
-2. Resolve company names to accurate ticker symbols
-3. Validate ticker symbols and company names
-4. Provide suggestions for ambiguous queries
-5. Handle various input formats (full company names, abbreviations, common names)
-
-When processing queries, consider:
-- Common company name variations (Apple, Apple Inc., AAPL)
-- Abbreviations and acronyms
-- Industry context clues
-- Stock exchange information
-
-Always prioritize accuracy over speed. If you're unsure about a ticker resolution, provide multiple suggestions rather than guessing.
-
-Output format should include:
-- Resolved ticker symbol
-- Full company name
-- Confidence level
-- Alternative suggestions if applicable
-
-Be concise but thorough in your analysis."""
-        
-        return ChatPromptTemplate.from_messages([
-            SystemMessage(content=system_message),
-            MessagesPlaceholder(variable_name="chat_history"),
-            HumanMessage(content="{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad")
-        ])
+        log_info("TickerLookupAgent initialized with AI-powered resolution")
     
     async def resolve_company_ticker(self, query: str) -> Dict[str, Any]:
         """
-        Resolve company name/ticker from user query.
+        Use AI to directly resolve company name and ticker from user query.
         
         Args:
             query: User query containing company reference
@@ -183,21 +48,55 @@ Be concise but thorough in your analysis."""
             Dictionary with resolved ticker and company info
         """
         try:
-            log_info(f"Resolving ticker for query: {query}")
+            log_info(f"AI resolving ticker for query: {query}")
             
-            # First, try direct lookup with the ticker lookup service
-            direct_result = await self._try_direct_lookup(query)
-            if direct_result["success"]:
-                return direct_result
+            # Create AI prompt for company and ticker identification
+            system_prompt = """You are an expert stock market analyst specializing in company identification and ticker symbol resolution.
+
+Your task is to analyze user queries and extract the exact company name and corresponding stock ticker symbol.
+
+Rules:
+1. Identify the company being referenced in the query
+2. Provide the exact company name and official ticker symbol
+3. Handle various input formats: full names, common names, abbreviations, existing tickers
+4. Return results in JSON format only
+5. If you cannot identify a company with high confidence, return an error
+
+Output format (JSON only):
+{
+    "success": true,
+    "company_name": "Full Official Company Name",
+    "ticker": "TICKER",
+    "confidence": "high|medium|low"
+}
+
+For errors:
+{
+    "success": false,
+    "error": "Reason for failure"
+}
+
+Examples:
+- "Apple stock" → {"success": true, "company_name": "Apple Inc.", "ticker": "AAPL", "confidence": "high"}
+- "TSLA analysis" → {"success": true, "company_name": "Tesla Inc.", "ticker": "TSLA", "confidence": "high"}
+- "Microsoft Corporation" → {"success": true, "company_name": "Microsoft Corporation", "ticker": "MSFT", "confidence": "high"}"""
+
+            user_prompt = f"Identify the company and ticker from this query: '{query}'"
             
-            # If direct lookup fails, use AI to extract and resolve
-            ai_result = await self._ai_assisted_lookup(query)
+            # Get AI response
+            response = await self.llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ])
             
-            log_info(f"Ticker resolution result: {ai_result}")
-            return ai_result
+            # Parse AI response
+            result = self._parse_ai_response(response.content, query)
+            
+            log_info(f"AI ticker resolution result: {result}")
+            return result
             
         except Exception as e:
-            error_msg = f"Ticker resolution failed: {str(e)}"
+            error_msg = f"AI ticker resolution failed: {str(e)}"
             log_error(error_msg)
             return {
                 "success": False,
@@ -205,146 +104,214 @@ Be concise but thorough in your analysis."""
                 "query": query
             }
     
-    async def _try_direct_lookup(self, query: str) -> Dict[str, Any]:
-        """Try direct ticker lookup without AI assistance."""
+    def _parse_ai_response(self, ai_response: str, original_query: str) -> Dict[str, Any]:
+        """Parse AI response and return structured result."""
         try:
-            # Clean the query
-            query_clean = query.strip().lower()
+            # Clean the response - remove any markdown formatting
+            cleaned_response = ai_response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
             
-            # Common extraction patterns
-            company_indicators = [
-                "tell me about", "analyze", "analysis of", "stock", "shares",
-                "company", "info on", "information about", "details on"
-            ]
+            # Parse JSON response
+            result = json.loads(cleaned_response)
             
-            # Remove common indicators
-            for indicator in company_indicators:
-                if indicator in query_clean:
-                    query_clean = query_clean.replace(indicator, "").strip()
+            # Validate required fields for success case
+            if result.get("success", False):
+                if not all(key in result for key in ["company_name", "ticker"]):
+                    return {
+                        "success": False,
+                        "error": "AI response missing required fields",
+                        "query": original_query
+                    }
+                
+                # Add metadata
+                result["method"] = "ai_direct"
+                result["query"] = original_query
+                
+                return result
             
-            # Remove common suffixes
-            query_clean = query_clean.replace(" stock", "").replace(" shares", "")
-            
-            # Try ticker lookup
-            ticker = self.ticker_lookup.lookup_ticker(query_clean)
-            if ticker:
-                company_name = self.ticker_lookup.get_company_name(ticker)
-                return {
-                    "success": True,
-                    "ticker": ticker,
-                    "company_name": company_name,
-                    "confidence": "high",
-                    "method": "direct_lookup"
-                }
-            
-            return {"success": False, "method": "direct_lookup"}
-            
-        except Exception as e:
-            return {"success": False, "error": str(e), "method": "direct_lookup"}
-    
-    async def _ai_assisted_lookup(self, query: str) -> Dict[str, Any]:
-        """Use AI to extract company information from query."""
-        try:
-            # Create a focused prompt for company extraction
-            extraction_prompt = f"""
-            Extract the company name or ticker symbol from this query: "{query}"
-            
-            The query might contain:
-            - Full company names (e.g., "Apple Inc.", "Microsoft Corporation")
-            - Common company names (e.g., "Apple", "Microsoft")
-            - Ticker symbols (e.g., "AAPL", "MSFT")
-            - Informal references (e.g., "Tesla", "Amazon")
-            
-            Return only the most likely company name or ticker, nothing else.
-            If you can't identify a company, return "UNKNOWN".
-            
-            Examples:
-            - "Tell me about Apple stock" → "Apple"
-            - "TSLA analysis" → "TSLA"
-            - "Microsoft Corporation shares" → "Microsoft"
-            """
-            
-            response = await self.llm.ainvoke([
-                SystemMessage(content="You are an expert at extracting company names from stock-related queries."),
-                HumanMessage(content=extraction_prompt)
-            ])
-            
-            extracted_company = response.content.strip()
-            
-            if extracted_company.upper() == "UNKNOWN":
-                return {
-                    "success": False,
-                    "error": "Could not extract company name from query",
-                    "query": query,
-                    "method": "ai_assisted"
-                }
-            
-            # Now try to resolve the extracted company
-            ticker = self.ticker_lookup.lookup_ticker(extracted_company)
-            if ticker:
-                company_name = self.ticker_lookup.get_company_name(ticker)
-                return {
-                    "success": True,
-                    "ticker": ticker,
-                    "company_name": company_name,
-                    "confidence": "medium",
-                    "method": "ai_assisted",
-                    "extracted_term": extracted_company
-                }
             else:
-                # Get suggestions
-                suggestions = self.ticker_lookup.suggest_tickers(extracted_company, limit=3)
+                # Error case
                 return {
                     "success": False,
-                    "error": f"No ticker found for '{extracted_company}'",
-                    "extracted_term": extracted_company,
-                    "suggestions": suggestions,
-                    "method": "ai_assisted"
+                    "error": result.get("error", "AI could not identify company"),
+                    "query": original_query,
+                    "method": "ai_direct"
                 }
                 
+        except json.JSONDecodeError as e:
+            return {
+                "success": False,
+                "error": f"Invalid AI response format: {str(e)}",
+                "query": original_query,
+                "ai_response": ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
+            }
         except Exception as e:
             return {
                 "success": False,
-                "error": str(e),
-                "method": "ai_assisted"
+                "error": f"Error parsing AI response: {str(e)}",
+                "query": original_query
             }
     
-    async def validate_ticker(self, ticker: str) -> Dict[str, Any]:
-        """Validate a ticker symbol."""
+    async def validate_company(self, company_input: str) -> Dict[str, Any]:
+        """
+        Validate if input is a valid company name or ticker using AI.
+        
+        Args:
+            company_input: Company name or ticker to validate
+            
+        Returns:
+            Dictionary with validation result
+        """
         try:
-            company_name = self.ticker_lookup.get_company_name(ticker)
-            if company_name:
-                return {
-                    "valid": True,
-                    "ticker": ticker,
-                    "company_name": company_name
-                }
-            else:
-                return {
-                    "valid": False,
-                    "error": f"Invalid ticker: {ticker}"
-                }
+            log_info(f"AI validating company: {company_input}")
+            
+            system_prompt = """You are validating whether the given input is a valid publicly traded company name or ticker symbol.
+
+Determine if the input represents a real, publicly traded company and provide the official company name and ticker.
+
+Output JSON format:
+{
+    "valid": true,
+    "company_name": "Official Company Name",
+    "ticker": "TICKER",
+    "input_type": "company_name|ticker"
+}
+
+For invalid inputs:
+{
+    "valid": false,
+    "error": "Reason why input is invalid"
+}"""
+
+            user_prompt = f"Validate this company/ticker: '{company_input}'"
+            
+            response = await self.llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ])
+            
+            # Parse validation response
+            result = self._parse_validation_response(response.content, company_input)
+            
+            log_info(f"AI validation result: {result}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"AI validation failed: {str(e)}"
+            log_error(error_msg)
+            return {
+                "valid": False,
+                "error": error_msg,
+                "input": company_input
+            }
+    
+    def _parse_validation_response(self, ai_response: str, original_input: str) -> Dict[str, Any]:
+        """Parse AI validation response."""
+        try:
+            # Clean response
+            cleaned_response = ai_response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            result = json.loads(cleaned_response)
+            result["input"] = original_input
+            return result
+            
+        except json.JSONDecodeError as e:
+            return {
+                "valid": False,
+                "error": f"Invalid AI validation response: {str(e)}",
+                "input": original_input
+            }
         except Exception as e:
             return {
                 "valid": False,
-                "error": str(e)
+                "error": f"Error parsing validation response: {str(e)}",
+                "input": original_input
             }
     
     async def suggest_companies(self, query: str, limit: int = 5) -> List[str]:
-        """Get company suggestions based on query."""
+        """
+        Get AI-powered company suggestions based on partial query.
+        
+        Args:
+            query: Partial company name or description
+            limit: Maximum number of suggestions
+            
+        Returns:
+            List of suggested company names
+        """
         try:
-            return self.ticker_lookup.suggest_tickers(query, limit)
+            log_info(f"AI generating company suggestions for: {query}")
+            
+            system_prompt = f"""Suggest up to {limit} publicly traded companies that match or are similar to the query.
+
+Return a JSON array of company names only. Focus on:
+1. Companies with similar names
+2. Companies in the same industry
+3. Well-known companies that might be what the user is looking for
+
+Output format:
+["Company Name 1", "Company Name 2", "Company Name 3"]
+
+Only return the JSON array, nothing else."""
+
+            user_prompt = f"Suggest companies similar to: '{query}'"
+            
+            response = await self.llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ])
+            
+            # Parse suggestions
+            suggestions = self._parse_suggestions_response(response.content)
+            
+            log_info(f"AI suggestions: {suggestions}")
+            return suggestions[:limit]
+            
         except Exception as e:
-            log_error(f"Error getting suggestions: {str(e)}")
+            log_error(f"Error generating AI suggestions: {str(e)}")
             return []
     
-    async def get_supported_companies(self) -> List[str]:
-        """Get all supported companies."""
+    def _parse_suggestions_response(self, ai_response: str) -> List[str]:
+        """Parse AI suggestions response."""
         try:
-            companies = list(self.ticker_lookup.common_tickers.keys())
-            return sorted([company.title() for company in companies])
-        except Exception as e:
-            log_error(f"Error getting supported companies: {str(e)}")
+            # Clean response
+            cleaned_response = ai_response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            suggestions = json.loads(cleaned_response)
+            
+            # Ensure it's a list of strings
+            if isinstance(suggestions, list):
+                return [str(item) for item in suggestions if isinstance(item, str)]
+            else:
+                return []
+                
+        except json.JSONDecodeError:
+            # Fallback: try to extract company names from text
+            lines = ai_response.strip().split('\n')
+            suggestions = []
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith(('```', '#', '*', '-')):
+                    # Remove numbering and quotes
+                    clean_line = line.replace('"', '').strip()
+                    if clean_line and len(clean_line) > 2:
+                        suggestions.append(clean_line)
+            return suggestions[:5]
+        except Exception:
             return []
     
     def update_state(self, status: str, data: Dict[str, Any] = None):
