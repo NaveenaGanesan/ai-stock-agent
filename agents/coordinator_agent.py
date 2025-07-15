@@ -10,7 +10,7 @@ import uuid
 import logging
 
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
 from models import (
@@ -196,6 +196,30 @@ class CoordinatorAgent:
         
         return state
     
+    def _update_shared_memory(self, agent_type: AgentType, key: str, value: Any):
+        """Update shared memory across all agents."""
+        try:
+            # Update coordinator's context
+            self.state.add_to_memory(f"{agent_type.value}_{key}", value)
+            
+            # Create context message for agent memories
+            context_message = f"Context from {agent_type.value}: {key} = {str(value)[:100]}{'...' if len(str(value)) > 100 else ''}"
+            
+            # Update relevant agent memories using proper LangChain API
+            if agent_type == AgentType.RESEARCH:
+                self.research_agent.memory.chat_memory.add_message(AIMessage(content=context_message))
+            elif agent_type == AgentType.ANALYSIS:
+                self.analysis_agent.memory.chat_memory.add_message(AIMessage(content=context_message))
+            elif agent_type == AgentType.SENTIMENT:
+                self.sentiment_agent.memory.chat_memory.add_message(AIMessage(content=context_message))
+            elif agent_type == AgentType.SUMMARIZATION:
+                self.summarization_agent.memory.chat_memory.add_message(AIMessage(content=context_message))
+                
+            log_info(f"Updated shared memory: {agent_type.value}.{key}")
+            
+        except Exception as e:
+            log_error(f"Failed to update shared memory: {str(e)}")
+    
     async def _research_step(self, state: GraphState) -> GraphState:
         """Execute research phase to gather stock and news data."""
         log_info("Executing research step")
@@ -209,29 +233,34 @@ class CoordinatorAgent:
             return state
         
         try:
-            # Use the research agent to fetch data
-            result = await self.research_agent.research_company(state["user_query"])
+            # Pass comprehensive context to research agent
+            research_context = {
+                "user_query": state["user_query"],
+                "ticker": state["workflow_state"].ticker,
+                "company_name": state["workflow_state"].company_name,
+                "session_id": state["session_id"],
+                "workflow_state": state["workflow_state"],
+                "previous_steps": state["step_count"] - 1,
+                "requested_data": ["stock_data", "news_data", "company_info"]
+            }
+            
+            # Use enhanced research method
+            result = await self.research_agent.research_company_enhanced(research_context)
             
             if result["success"]:
-                # Fetch stock data directly (more reliable than through agent)
-                stock_data = await self._fetch_stock_data(
-                    state["workflow_state"].ticker,
-                    state["workflow_state"].company_name
-                )
+                # Update workflow state with research results
+                research_data = result["data"]
                 
-                if stock_data:
-                    state["workflow_state"].stock_data = stock_data
-                    log_info(f"Stock data fetched for {state['workflow_state'].ticker}")
+                if research_data.get("stock_data"):
+                    state["workflow_state"].stock_data = research_data["stock_data"]
+                    log_info(f"Stock data received from research agent for {state['workflow_state'].ticker}")
                 
-                # Fetch news data
-                news_data = await self._fetch_news_data(
-                    state["workflow_state"].company_name,
-                    state["workflow_state"].ticker
-                )
+                if research_data.get("news_data"):
+                    state["workflow_state"].news_data = research_data["news_data"]
+                    log_info(f"News data received: {len(research_data['news_data'].articles)} articles")
                 
-                if news_data:
-                    state["workflow_state"].news_data = news_data
-                    log_info(f"News data fetched: {len(news_data.articles)} articles")
+                # Update data sources tracking
+                state["workflow_state"].data_sources.extend(research_data.get("data_sources", []))
                 
                 # Create successful research response
                 state["research_response"] = AgentResponse(
@@ -239,10 +268,25 @@ class CoordinatorAgent:
                     success=True,
                     message="Research completed successfully",
                     data={
-                        "stock_data_available": stock_data is not None,
-                        "news_data_available": news_data is not None
+                        "stock_data_available": research_data.get("stock_data") is not None,
+                        "news_data_available": research_data.get("news_data") is not None,
+                        "data_sources": research_data.get("data_sources", []),
+                        "research_insights": research_data.get("insights", [])
                     }
                 )
+                
+                # Add research insights to messages for context
+                if research_data.get("insights"):
+                    insights_msg = f"Research findings: {'; '.join(research_data['insights'])}"
+                    state["messages"].append(AIMessage(content=insights_msg))
+                
+                # Update shared memory for subsequent agents
+                self._update_shared_memory(AgentType.RESEARCH, "completed", True)
+                self._update_shared_memory(AgentType.RESEARCH, "ticker", state["workflow_state"].ticker)
+                self._update_shared_memory(AgentType.RESEARCH, "company_name", state["workflow_state"].company_name)
+                self._update_shared_memory(AgentType.RESEARCH, "data_sources", research_data.get("data_sources", []))
+                self._update_shared_memory(AgentType.RESEARCH, "insights", research_data.get("insights", []))
+                
             else:
                 error_msg = f"Research failed: {result.get('error')}"
                 state["errors"].append(error_msg)

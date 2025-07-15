@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from models import (
     AgentType, AgentTask, AgentState, WorkflowState, AgentResponse, 
-    TaskStatus, StockData, NewsData, CompanyInfo
+    TaskStatus, StockData, NewsData, CompanyInfo, StockMovement, TrendDirection, NewsArticle
 )
 from utils import log_info, log_error, get_env_variable
 from services.stock_data import StockDataFetcher
@@ -231,13 +231,49 @@ Format your responses with clear structure and include confidence levels for you
         try:
             log_info(f"Fetching stock data for {ticker}")
             
-            # Use the stock fetcher service
-            result = self.stock_fetcher.fetch_stock_data(ticker, days=7)
+            # Use the correct service method that actually exists
+            comprehensive_data = self.stock_fetcher.get_comprehensive_data(ticker, days=7)
             
-            if result.get("success"):
-                return result.get("data")
+            if comprehensive_data:
+                # Convert to StockData model
+                company_info = CompanyInfo(
+                    symbol=comprehensive_data.get("symbol", ticker),
+                    name=comprehensive_data.get("name", company_name),
+                    sector=comprehensive_data.get("sector"),
+                    industry=comprehensive_data.get("industry"),
+                    market_cap=comprehensive_data.get("market_cap"),
+                    current_price=comprehensive_data.get("current_price"),
+                    currency=comprehensive_data.get("currency", "USD"),
+                    exchange=comprehensive_data.get("exchange"),
+                    website=comprehensive_data.get("website"),
+                    business_summary=comprehensive_data.get("business_summary")
+                )
+                
+                stock_movement = None
+                if "movements" in comprehensive_data:
+                    movements = comprehensive_data["movements"]
+                    stock_movement = StockMovement(
+                        first_price=movements.get("first_price", 0),
+                        last_price=movements.get("last_price", 0),
+                        price_change=movements.get("price_change", 0),
+                        percentage_change=movements.get("percentage_change", 0),
+                        trend=TrendDirection(movements.get("trend", "Sideways")),
+                        volatility=movements.get("volatility", 0),
+                        period_high=movements.get("period_high", 0),
+                        period_low=movements.get("period_low", 0),
+                        avg_volume=movements.get("avg_volume", 0)
+                    )
+                
+                stock_data = StockData(
+                    company_info=company_info,
+                    movements=stock_movement,
+                    data_period_days=comprehensive_data.get("data_period_days", 7)
+                )
+                
+                log_info(f"Stock data converted to StockData model for {ticker}")
+                return stock_data
             else:
-                log_error(f"Failed to fetch stock data: {result.get('error')}")
+                log_error(f"No comprehensive data returned for {ticker}")
                 return None
                 
         except Exception as e:
@@ -249,13 +285,39 @@ Format your responses with clear structure and include confidence levels for you
         try:
             log_info(f"Fetching news data for {company_name} ({ticker})")
             
-            # Use the news fetcher service
-            result = self.news_fetcher.fetch_news(company_name, ticker, limit=5)
+            # Use the correct service method that actually exists
+            articles_list = self.news_fetcher.get_company_news(company_name, ticker, limit=5)
             
-            if result.get("success"):
-                return result.get("data")
+            if articles_list:
+                # Convert to NewsArticle models
+                news_articles = []
+                for article_data in articles_list:
+                    try:
+                        article = NewsArticle(
+                            title=article_data.get("title", ""),
+                            url=article_data.get("url", ""),
+                            summary=article_data.get("summary", ""),
+                            published_date=article_data.get("published_date"),
+                            source=article_data.get("source", "Unknown"),
+                            ticker=ticker
+                        )
+                        news_articles.append(article)
+                    except Exception as e:
+                        log_error(f"Error converting article to NewsArticle model: {str(e)}")
+                        continue
+                
+                news_data = NewsData(
+                    company_name=company_name,
+                    ticker=ticker,
+                    articles=news_articles,
+                    total_articles=len(news_articles),
+                    fetch_timestamp=datetime.now()
+                )
+                
+                log_info(f"News data converted to NewsData model: {len(news_articles)} articles")
+                return news_data
             else:
-                log_error(f"Failed to fetch news data: {result.get('error')}")
+                log_error(f"No news articles returned for {company_name}")
                 return None
                 
         except Exception as e:
@@ -290,7 +352,111 @@ Format your responses with clear structure and include confidence levels for you
         
         self.state.current_task = task if status == TaskStatus.IN_PROGRESS else None
     
-    # Direct methods for coordinator to use
+    async def research_company_enhanced(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhanced research method with comprehensive context."""
+        try:
+            # Extract context information
+            user_query = context.get("user_query", "")
+            ticker = context.get("ticker")
+            company_name = context.get("company_name")
+            session_id = context.get("session_id", "research_session")
+            workflow_state = context.get("workflow_state")
+            requested_data = context.get("requested_data", [])
+            
+            log_info(f"Enhanced research for {company_name} ({ticker}) with context: {requested_data}")
+            
+            # Create task with enhanced context
+            task = AgentTask(
+                agent_type=self.agent_type,
+                description=f"Research company: {company_name} ({ticker})",
+                input_data={
+                    "query": user_query,
+                    "ticker": ticker,
+                    "company_name": company_name,
+                    "requested_data": requested_data
+                }
+            )
+            
+            # Use existing workflow state or create enhanced one
+            if workflow_state:
+                research_workflow_state = workflow_state
+            else:
+                research_workflow_state = WorkflowState(
+                    session_id=session_id,
+                    input_query=user_query,
+                    ticker=ticker,
+                    company_name=company_name
+                )
+            
+            # Collect research data
+            research_data = {}
+            data_sources = []
+            insights = []
+            
+            # Fetch stock data if requested
+            if "stock_data" in requested_data and ticker:
+                stock_data = await self._fetch_stock_data(ticker, company_name)
+                if stock_data:
+                    research_data["stock_data"] = stock_data
+                    data_sources.append("yfinance")
+                    insights.append(f"Stock data retrieved for {ticker}")
+                    log_info(f"Stock data fetched for {ticker}")
+            
+            # Fetch news data if requested
+            if "news_data" in requested_data and company_name:
+                news_data = await self._fetch_news_data(company_name, ticker)
+                if news_data:
+                    research_data["news_data"] = news_data
+                    data_sources.extend(["yahoo_news", "google_news"])
+                    insights.append(f"Found {len(news_data.articles)} news articles")
+                    log_info(f"News data fetched: {len(news_data.articles)} articles")
+            
+            # Add LangChain agent insights if available
+            if self.agent_executor:
+                try:
+                    agent_result = await self._execute_with_retry(
+                        self.agent_executor.ainvoke,
+                        {
+                            "input": f"Analyze {company_name} ({ticker}). Provide key insights about the company's current status, recent developments, and market position.",
+                            "chat_history": self.memory.chat_memory.messages
+                        }
+                    )
+                    
+                    if agent_result and "output" in agent_result:
+                        insights.append(f"AI Analysis: {agent_result['output'][:200]}...")
+                        research_data["ai_insights"] = agent_result["output"]
+                        
+                except Exception as e:
+                    log_error(f"Agent analysis failed: {str(e)}")
+            
+            # Update workflow state
+            if research_workflow_state:
+                research_workflow_state.stock_data = research_data.get("stock_data")
+                research_workflow_state.news_data = research_data.get("news_data")
+                research_workflow_state.data_sources.extend(data_sources)
+            
+            # Update agent state
+            self.update_state(task, TaskStatus.COMPLETED, research_data)
+            
+            return {
+                "success": True,
+                "data": {
+                    **research_data,
+                    "data_sources": data_sources,
+                    "insights": insights
+                },
+                "message": f"Enhanced research completed for {company_name}",
+                "workflow_state": research_workflow_state
+            }
+            
+        except Exception as e:
+            log_error(f"Enhanced research failed: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Enhanced research failed for {context.get('company_name', 'unknown company')}"
+            }
+    
     async def research_company(self, query: str) -> Dict[str, Any]:
         """Research a company based on query."""
         try:
