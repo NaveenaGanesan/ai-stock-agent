@@ -4,7 +4,7 @@ A sophisticated AI-powered stock analysis platform featuring a complete agent-ba
 
 ## 🏗️ Architecture Overview
 
-**Complete Agent-Based System**: Every component is an intelligent agent that collaborates through LangGraph workflows:
+**Complete Agent-Based System**: Every component is an intelligent agent that collaborates through LangGraph workflows with comprehensive state management:
 
 ```mermaid
 graph TB
@@ -13,25 +13,92 @@ graph TB
         C[CLI Client] --> D[CLI Interface]
     end
     
-    subgraph "Agent Orchestration Layer"
+    subgraph "Coordination & Orchestration Layer"
         B --> E[Coordinator Agent]
         D --> E
-        E --> F[LangGraph Workflow]
+        E --> F[LangGraph StateGraph]
+        F --> G[Workflow Compiler]
     end
     
-    subgraph "Specialized Agents"
-        F --> G[Research Agent]
-        F --> H[Analysis Agent]
-        F --> I[Sentiment Agent]
-        F --> J[Summary Agent]
+    subgraph "State Management Layer"
+        H[GraphState] --> I[WorkflowState]
+        I --> J[AgentState]
+        J --> K[Task Tracking]
+        F -.-> H
+        G -.-> I
     end
     
-    subgraph "Data Sources"
-        G --> K[Stock Data API]
-        G --> L[News API]
-        G --> M[Ticker Lookup]
+    subgraph "Agent Execution Layer"
+        F --> L[Ticker Lookup Agent]
+        F --> M[Research Agent]
+        F --> N[Analysis Agent]
+        F --> O[Sentiment Agent]
+        F --> P[Summarization Agent]
+    end
+    
+    subgraph "Tool Layer"
+        M --> Q[StockDataTool]
+        M --> R[NewsDataTool]
+        L --> S[AI Lookup Tool]
+    end
+    
+    subgraph "Service Layer"
+        Q --> T[StockDataFetcher]
+        R --> U[NewsFetcher]
+        S --> V[LLM Service]
+    end
+    
+    subgraph "External Data Sources"
+        T --> W[Yahoo Finance API]
+        U --> X[NewsAPI]
+        U --> Y[Google News]
+        V --> Z[OpenAI GPT-4]
+    end
+    
+    subgraph "Data Models"
+        AA[StockData] --> I
+        BB[NewsData] --> I
+        CC[TechnicalAnalysis] --> I
+        DD[SentimentAnalysis] --> I
+        EE[StockSummary] --> I
     end
 ```
+
+## 🔄 State Management Architecture
+
+The AI Stock Agent uses a sophisticated multi-layered state management system powered by LangGraph:
+
+### State Layers Explained
+
+1. **GraphState** - Top-level workflow orchestration state
+   - Manages overall execution flow and agent coordination
+   - Tracks current step, errors, and execution metadata
+   - Contains references to all other state layers
+
+2. **WorkflowState** - Business logic and data aggregation state
+   - Stores ticker, company name, and user query
+   - Accumulates data from all agents (stock_data, news_data, etc.)
+   - Tracks data sources and processing steps
+
+3. **AgentState** - Individual agent execution state
+   - Manages agent-specific tasks and their status
+   - Tracks completed, failed, and active tasks
+   - Maintains agent-specific memory and context
+
+4. **Data Models** - Structured data representations
+   - `StockData`: Company info, price movements, technical indicators
+   - `NewsData`: Articles collection with metadata and timestamps
+   - `TechnicalAnalysis`: Analysis results with trends and insights
+   - `SentimentAnalysis`: News sentiment with scores and themes
+   - `StockSummary`: Final comprehensive analysis report
+
+### State Flow Benefits
+
+- **Fault Tolerance**: State can be recovered at any step if agents fail
+- **Transparency**: Full visibility into what each agent accomplished
+- **Debugging**: Easy to trace where issues occur in the workflow
+- **Extensibility**: New agents can easily access existing state data
+- **Consistency**: All agents work with the same shared data models
 
 ## 📁 Project Structure
 
@@ -82,21 +149,41 @@ ai-stock-agent/
 3. **Error Handling**: Robust error propagation and state recovery
 4. **Parallel Processing**: Efficient execution of independent tasks
 
-### Agent Workflow
+### Agent Workflow with State Management
 
 ```mermaid
 graph TB
-    A[Initialize] --> B[Ticker Lookup Agent]
-    B --> C[Research Agent]
-    C --> D[Analysis Agent]
-    D --> E[Sentiment Agent]
-    E --> F[Summarization Agent]
-    F --> G[Finalize]
+    A[User Query] --> B[Initialize GraphState]
+    B --> C[Ticker Lookup Step]
+    C --> D[Update WorkflowState]
+    D --> E[Research Step]
+    E --> F[Update StockData & NewsData]
+    F --> G[Analysis Step]
+    G --> H[Update TechnicalAnalysis]
+    H --> I[Sentiment Step]
+    I --> J[Update SentimentAnalysis]
+    J --> K[Summarization Step]
+    K --> L[Create Final Summary]
+    L --> M[Return Response]
     
-    subgraph "LangGraph State Machine"
-        H[GraphState] --> I[WorkflowState]
-        I --> J[Agent Responses]
-        J --> K[Final Summary]
+    subgraph "State Flow"
+        N[GraphState] --> O[WorkflowState]
+        O --> P[AgentStates]
+        P --> Q[Task Tracking]
+        Q --> R[Data Models]
+        R --> S[Final Output]
+    end
+    
+    subgraph "Error Handling"
+        T[Retry Logic] --> U[State Recovery]
+        U --> V[Graceful Degradation]
+    end
+    
+    C -.-> N
+    E -.-> O
+    G -.-> P
+    I -.-> Q
+    K -.-> R
 ```
 
 ## 🚀 Quick Start
@@ -165,21 +252,6 @@ python app.py --query "TSLA analysis" --format json
 
 # Verbose output
 python app.py --query "Amazon stock" --verbose
-```
-
-#### Option 3: Python Library
-
-Use as a Python library:
-
-```python
-import asyncio
-from app import analyze_stock_simple
-
-async def main():
-    result = await analyze_stock_simple("Tell me about Apple stock")
-    print(result)
-
-asyncio.run(main())
 ```
 
 ## 🔌 API Endpoints
@@ -376,146 +448,6 @@ class SummarizationAgent:
         ])
         return await self._process_summary_result(result, workflow_state)
 ```
-
-## 🔐 Configuration
-
-### Simplified Environment Configuration
-
-The system now uses a streamlined configuration approach with minimal required settings:
-
-```env
-# ===============================================================================
-# STOCK SUMMARY AGENT - ENVIRONMENT CONFIGURATION
-# ===============================================================================
-
-# OpenAI API Configuration (REQUIRED)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# NewsAPI Configuration (OPTIONAL - for enhanced news coverage)
-# Get your free API key from: https://newsapi.org/register
-NEWS_API_KEY=your_news_api_key_here
-
-# ===============================================================================
-# BASIC CONFIGURATION
-# ===============================================================================
-
-# Default number of days for stock analysis
-STOCK_AGENT_DEFAULT_ANALYSIS_DAYS=7
-
-# Maximum number of news articles to fetch
-STOCK_AGENT_MAX_NEWS_ARTICLES=5
-
-# ===============================================================================
-# LLM CONFIGURATION
-# ===============================================================================
-
-# OpenAI Model Configuration
-OPENAI_MODEL=gpt-4
-OPENAI_TEMPERATURE=0.7
-OPENAI_MAX_TOKENS=1000
-
-# ===============================================================================
-# FASTAPI CONFIGURATION
-# ===============================================================================
-
-# FastAPI server configuration
-FASTAPI_HOST=0.0.0.0
-FASTAPI_PORT=8000
-FASTAPI_RELOAD=true
-
-# ===============================================================================
-# SYSTEM CONFIGURATION
-# ===============================================================================
-
-# Logging level (DEBUG, INFO, WARNING, ERROR)
-LOG_LEVEL=INFO
-
-# Enable verbose logging for debugging
-VERBOSE_LOGGING=false
-
-# Maximum retry attempts for failed operations
-MAX_RETRY_ATTEMPTS=3
-
-# Timeout for agent operations (in seconds)
-AGENT_TIMEOUT_SECONDS=30
-
-# ===============================================================================
-# DEVELOPMENT CONFIGURATION
-# ===============================================================================
-
-# Enable development mode (more verbose logging, relaxed error handling)
-DEVELOPMENT_MODE=false
-
-# Enable debug mode for agents
-DEBUG_AGENTS=false
-```
-
-### Key Simplifications:
-- **No agent-specific configurations** (temperatures are hardcoded in agents)
-- **No complex caching configuration** (kept simple)
-- **No unnecessary data source toggles** (services handle availability automatically)
-- **No performance tuning knobs** (sensible defaults)
-
-## 🧪 Testing
-
-### Unit Tests
-```bash
-# Test individual agents
-python -m pytest tests/test_agents.py -v
-
-# Test FastAPI endpoints
-python -m pytest tests/test_api.py -v
-
-# Test agent integration
-python -m pytest tests/test_integration.py -v
-```
-
-### Quick API Test
-```bash
-# Test the main analysis endpoint
-curl -X POST "http://localhost:8000/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Test Apple stock"}'
-
-# Health check
-curl "http://localhost:8000/health"
-```
-
-## 🛡️ Security & Rate Limiting
-
-### 🔐 Authentication
-```python
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-security = HTTPBearer()
-
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if credentials.credentials != "your-secret-token":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token"
-        )
-    return credentials.credentials
-```
-
-### 📊 Rate Limiting
-```python
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-@app.post("/analyze")
-@limiter.limit("5/minute")
-async def analyze_stock(request: Request, query: AnalysisRequest):
-    # Analysis logic
-    pass
-```
-
 ## 🔧 Troubleshooting
 
 ### Common Issues
@@ -553,21 +485,6 @@ uvicorn app:app --reload --log-level debug
 # Monitor agent performance
 curl http://localhost:8000/health
 ```
-
-## 🎯 Recent Improvements
-
-### ✅ Architecture Refactoring (Latest)
-- **Simplified Tool Architecture**: Tools now directly access services without redundancy
-- **Removed Configuration Dependencies**: Agents no longer require complex configuration
-- **Cleaner Separation of Concerns**: Tools handle data fetching, agents handle orchestration
-- **Streamlined Environment Setup**: Minimal required configuration for easier setup
-
-### ✅ Key Benefits
-- **Reduced Complexity**: Fewer configuration options to manage
-- **Better Maintainability**: Single source of truth for data fetching
-- **Improved Performance**: Direct service access without unnecessary layers
-- **Easier Deployment**: Simplified environment configuration
-
 ## 🎯 Roadmap
 
 ### Phase 3: Advanced Features
