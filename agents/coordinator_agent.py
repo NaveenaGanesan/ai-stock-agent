@@ -14,7 +14,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AI
 from langchain_openai import ChatOpenAI
 
 from models import (
-    AgentType, AgentTask, WorkflowState, AgentResponse, TaskStatus,
+    AgentType, AgentTask, AgentState, WorkflowState, AgentResponse, TaskStatus,
     StockData, NewsData, TechnicalAnalysis, SentimentAnalysis,
     StockSummary, create_agent_task, create_workflow_state,
     CompanyInfo, StockMovement, NewsArticle, SentimentType, TrendDirection
@@ -41,6 +41,7 @@ class GraphState(TypedDict):
     workflow_state: WorkflowState
     
     # Agent responses
+    ticker_lookup_response: Optional[AgentResponse]
     research_response: Optional[AgentResponse]
     analysis_response: Optional[AgentResponse]
     sentiment_response: Optional[AgentResponse]
@@ -62,6 +63,11 @@ class CoordinatorAgent:
     
     def __init__(self):
         log_info("Initializing CoordinatorAgent")
+        
+        # Initialize coordinator's own agent state
+        self.agent_type = AgentType.COORDINATOR
+        self.state = AgentState(agent_type=self.agent_type)
+        
         self.llm = ChatOpenAI(
             model="gpt-4",
             temperature=0.3,  # Lower temperature for more consistent coordination
@@ -121,6 +127,7 @@ class CoordinatorAgent:
             "user_query": user_query,
             "session_id": workflow_id,
             "workflow_state": create_workflow_state(workflow_id, user_query),
+            "ticker_lookup_response": None,
             "research_response": None,
             "analysis_response": None,
             "sentiment_response": None,
@@ -175,26 +182,95 @@ class CoordinatorAgent:
         state["step_count"] += 1
         
         try:
+            # Create a task for coordinator's AgentState tracking
+            task = AgentTask(
+                agent_type=AgentType.COORDINATOR,
+                description=f"Ticker lookup for query: {state['user_query']}",
+                input_data={"query": state["user_query"]}
+            )
+            
+            # Update coordinator's state
+            self._update_coordinator_state(task, TaskStatus.IN_PROGRESS)
+            
             # Use the ticker lookup agent to resolve company/ticker
             result = await self.ticker_lookup_agent.resolve_company_ticker(state["user_query"])
             
             if result["success"]:
+                # Update WorkflowState
                 state["workflow_state"].ticker = result.get("ticker")
                 state["workflow_state"].company_name = result.get("company_name")
                 state["workflow_state"].update_timestamp()
                 
+                # Create successful ticker lookup response
+                state["ticker_lookup_response"] = AgentResponse(
+                    agent_type=AgentType.COORDINATOR,  # Coordinator handles ticker lookup
+                    success=True,
+                    message=f"Resolved: {result.get('company_name')} ({result.get('ticker')})",
+                    data={
+                        "ticker": result.get("ticker"),
+                        "company_name": result.get("company_name"),
+                        "confidence": result.get("confidence", "medium"),
+                        "method": result.get("method", "ai_direct")
+                    }
+                )
+                
+                # Update coordinator's state as completed
+                self._update_coordinator_state(task, TaskStatus.COMPLETED, result)
+                
+                # Update shared memory for subsequent agents
+                self._update_shared_memory(AgentType.COORDINATOR, "ticker_resolved", True)
+                self._update_shared_memory(AgentType.COORDINATOR, "ticker", result.get("ticker"))
+                self._update_shared_memory(AgentType.COORDINATOR, "company_name", result.get("company_name"))
+                
                 log_info(f"Resolved: {result.get('company_name')} ({result.get('ticker')})")
+                
             else:
                 error_msg = f"Could not resolve company/ticker: {result.get('error')}"
                 state["errors"].append(error_msg)
+                
+                # Create failed ticker lookup response
+                state["ticker_lookup_response"] = AgentResponse(
+                    agent_type=AgentType.COORDINATOR,
+                    success=False,
+                    message=error_msg,
+                    error=result.get("error")
+                )
+                
+                # Update coordinator's state as failed
+                self._update_coordinator_state(task, TaskStatus.FAILED)
+                
                 log_error(error_msg)
         
         except Exception as e:
             error_msg = f"Ticker lookup step failed: {str(e)}"
             state["errors"].append(error_msg)
+            
+            # Create error response
+            state["ticker_lookup_response"] = AgentResponse(
+                agent_type=AgentType.COORDINATOR,
+                success=False,
+                message=error_msg,
+                error=str(e)
+            )
+            
             log_error(error_msg)
         
         return state
+    
+    def _update_coordinator_state(self, task: AgentTask, status: TaskStatus, output_data: Dict[str, Any] = None):
+        """Update coordinator's AgentState."""
+        task.status = status
+        if output_data:
+            task.output_data = output_data
+        
+        if status == TaskStatus.COMPLETED:
+            task.end_time = datetime.now()
+            self.state.completed_tasks.append(task)
+        elif status == TaskStatus.FAILED:
+            task.end_time = datetime.now()
+            self.state.failed_tasks.append(task)
+        
+        self.state.current_task = task if status == TaskStatus.IN_PROGRESS else None
     
     def _update_shared_memory(self, agent_type: AgentType, key: str, value: Any):
         """Update shared memory across all agents."""

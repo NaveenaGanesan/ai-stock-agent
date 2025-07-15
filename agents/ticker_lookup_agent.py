@@ -24,7 +24,7 @@ class TickerLookupAgent:
     
     def __init__(self):
         """Initialize the ticker lookup agent."""
-        self.agent_type = AgentType.COORDINATOR
+        self.agent_type = AgentType.TICKER_LOOKUP
         self.state = AgentState(agent_type=self.agent_type)
         
         # Initialize LLM with low temperature for consistent results
@@ -35,7 +35,7 @@ class TickerLookupAgent:
             openai_api_key=get_env_variable("OPENAI_API_KEY")
         )
         
-        log_info("TickerLookupAgent initialized successfully")
+        log_info("TickerLookupAgent initialized with AI-powered resolution")
     
     async def resolve_company_ticker(self, query: str) -> Dict[str, Any]:
         """
@@ -48,6 +48,9 @@ class TickerLookupAgent:
             Dictionary with resolved ticker and company info
         """
         try:
+            # Update agent state - start processing
+            self.update_state("processing", {"query": query, "method": "ai_direct"})
+            
             log_info(f"AI resolving ticker for query: {query}")
             
             # Create AI prompt for company and ticker identification
@@ -92,12 +95,26 @@ Examples:
             # Parse AI response
             result = self._parse_ai_response(response.content, query)
             
+            # Update agent state based on result
+            if result["success"]:
+                self.update_state("completed", {
+                    "ticker": result.get("ticker"),
+                    "company_name": result.get("company_name"),
+                    "confidence": result.get("confidence")
+                })
+            else:
+                self.update_state("failed", {"error": result.get("error")})
+            
             log_info(f"AI ticker resolution result: {result}")
             return result
             
         except Exception as e:
             error_msg = f"AI ticker resolution failed: {str(e)}"
             log_error(error_msg)
+            
+            # Update agent state as failed
+            self.update_state("failed", {"error": error_msg})
+            
             return {
                 "success": False,
                 "error": error_msg,

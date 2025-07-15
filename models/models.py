@@ -38,6 +38,7 @@ class StockAgentModels:
     class AgentType(str, Enum):
         """Types of agents in the system."""
         COORDINATOR = "coordinator"
+        TICKER_LOOKUP = "ticker_lookup"
         RESEARCH = "research"
         ANALYSIS = "analysis"
         SENTIMENT = "sentiment"
