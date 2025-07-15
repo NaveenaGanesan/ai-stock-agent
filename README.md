@@ -43,7 +43,7 @@ ai-stock-agent/
 │   └── models.py                   # Unified StockAgentModels class
 ├── agents/                          # AI Agents & Orchestration
 │   ├── __init__.py
-│   ├── coordinator.py              # LangGraph workflow coordinator
+│   ├── coordinator_agent.py        # LangGraph workflow coordinator
 │   ├── ticker_lookup_agent.py      # Company/ticker resolution agent
 │   ├── research_agent.py           # Data collection & research agent
 │   ├── analysis_agent.py           # Technical analysis agent
@@ -51,7 +51,6 @@ ai-stock-agent/
 │   └── summarization_agent.py      # Final summary generation agent
 ├── services/                        # External Services Integration
 │   ├── __init__.py
-│   ├── ticker_lookup.py            # Company/ticker resolution service
 │   ├── stock_data.py               # Stock market data fetching service
 │   └── news_fetcher.py             # News article collection service
 ├── utils/                           # Utility Functions
@@ -98,108 +97,67 @@ graph TB
         H[GraphState] --> I[WorkflowState]
         I --> J[Agent Responses]
         J --> K[Final Summary]
-    end
 ```
 
-### Individual Agent Architecture
-
-Each agent is a self-contained unit with:
-- **LangChain LLM**: GPT-4 integration with specific temperature settings
-- **Custom Tools**: Agent-specific tools for data fetching and processing
-- **Prompt Engineering**: Specialized prompts for optimal performance
-- **Error Handling**: Retry logic and graceful failure handling
-- **State Management**: Local state tracking and workflow integration
-
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
-
 - Python 3.8+
-- OpenAI API key
-- Required API keys (see Configuration section)
+- OpenAI API key (required)
+- NewsAPI key (optional, for enhanced news coverage)
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd ai-stock-agent
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment**
-   ```bash
-   cp config/env.example .env
-   # Edit .env with your API keys
-   ```
-
-## 🔧 Configuration
-
-Copy `config/env.example` to `.env` and configure:
-
-```env
-# Core Configuration
-OPENAI_API_KEY=your_openai_api_key_here
-LANGCHAIN_API_KEY=your_langchain_api_key_here
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_PROJECT=ai-stock-agent
-
-# FastAPI Configuration
-FASTAPI_HOST=0.0.0.0
-FASTAPI_PORT=8000
-FASTAPI_RELOAD=true
-
-# Stock Data Configuration
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
-FINNHUB_API_KEY=your_finnhub_key_here
-POLYGON_API_KEY=your_polygon_key_here
-
-# News API Configuration
-NEWS_API_KEY=your_news_api_key_here
-GNEWS_API_KEY=your_gnews_key_here
+1. **Clone the repository**:
+```bash
+git clone https://github.com/your-username/ai-stock-agent.git
+cd ai-stock-agent
 ```
 
-## 🎯 How to Start the Application
-
-### Option 1: FastAPI Backend (REST API)
-
-Start the FastAPI server:
-
+2. **Create virtual environment**:
 ```bash
-# Start the FastAPI server
-python app.py --server
+python -m venv venv
+source venv/bin/activate
+```
 
-# Or specify custom host/port
-python app.py --server --host 0.0.0.0 --port 8000
+3. **Install dependencies**:
+```bash
+pip install -r requirements.txt
+```
 
-# Or using uvicorn directly
+4. **Configure environment**:
+```bash
+cp env.example .env
+# Edit .env with your API keys
+```
+
+5. **Required environment variables**:
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+NEWS_API_KEY=your_news_api_key_here  # Optional
+```
+
+### Usage
+
+#### Option 1: FastAPI Server (Recommended)
+
+Start the server:
+```bash
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-The API will be available at:
-- **API Docs**: http://localhost:8000/api/docs
-- **Health Check**: http://localhost:8000/health
-- **Analysis Endpoint**: http://localhost:8000/analyze
+Access the interactive API documentation at: `http://localhost:8000/docs`
 
-### Option 2: CLI Interface
-
-Use the command-line interface:
+#### Option 2: Command Line Interface
 
 ```bash
-# Analyze a single stock
+# Interactive mode
+python app.py
+
+# Direct query
 python app.py --query "Tell me about Apple stock"
 
-# Analyze multiple stocks
+# Batch analysis
 python app.py --batch "Apple,Microsoft,Google"
 
 # Custom output format
@@ -207,12 +165,9 @@ python app.py --query "TSLA analysis" --format json
 
 # Verbose output
 python app.py --query "Amazon stock" --verbose
-
-# Interactive mode (default)
-python app.py
 ```
 
-### Option 3: Python Library
+#### Option 3: Python Library
 
 Use as a Python library:
 
@@ -250,12 +205,7 @@ curl -X POST "http://localhost:8000/validate-ticker" \
 -d '{"company_name": "Apple"}'
 ```
 
-### 4. Supported Companies
-```bash
-curl "http://localhost:8000/supported-companies"
-```
-
-### 5. Health Check
+### 4. Health Check
 ```bash
 curl "http://localhost:8000/health"
 ```
@@ -293,33 +243,63 @@ class CoordinatorAgent:
 
 ```python
 class TickerLookupAgent:
+    def __init__(self):
+        # No configuration required - simplified initialization
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.1)
+    
     async def resolve_company_ticker(self, query: str) -> Dict[str, Any]:
-        # Direct lookup first, then AI-assisted extraction
-        result = await self._try_direct_lookup(query)
-        if not result["success"]:
-            result = await self._ai_assisted_lookup(query)
-        return result
+        # AI-powered ticker resolution
+        return await self._ai_assisted_lookup(query)
 ```
 
-### 📊 Research Agent
-**Role**: Comprehensive data collection and validation
-**Capabilities**:
-- Stock price data fetching (yfinance integration)
-- News article collection from multiple sources
-- Data quality validation and cleaning
-- Historical data analysis
-- Real-time market data integration
+### 📊 Research Agent (Refactored Architecture)
+**Role**: Comprehensive data collection using specialized tools
+**Key Features**:
+- **Tool-Based Architecture**: Uses specialized tools that directly access services
+- **No Data Duplication**: Single source of truth for data fetching
+- **Clean Separation**: Tools handle data fetching, agent handles orchestration
 
+**Tool Architecture**:
+```python
+class StockDataTool(BaseTool):
+    """Directly accesses StockDataFetcher service"""
+    def __init__(self):
+        self.fetcher = StockDataFetcher()
+    
+    def _run(self, ticker: str, company_name: str, days: int = 7):
+        # Direct service access with model conversion
+        data = self.fetcher.get_comprehensive_data(ticker, company_name, days)
+        return self._convert_to_stock_data_model(data)
+
+class NewsDataTool(BaseTool):
+    """Directly accesses NewsFetcher service"""
+    def __init__(self):
+        self.fetcher = NewsFetcher()
+    
+    def _run(self, company_name: str, ticker: str, limit: int = 5):
+        # Direct service access with model conversion
+        articles = self.fetcher.get_company_news(company_name, ticker, limit)
+        return self._convert_to_news_data_model(articles)
+```
+
+**Research Agent**:
 ```python
 class ResearchAgent:
     def __init__(self):
-        self.tools = [StockDataTool(), NewsDataTool(), TickerLookupTool()]
-        self.stock_fetcher = StockDataFetcher()
-        self.news_fetcher = NewsFetcher()
+        # Simplified - no configuration required
+        self.tools = [StockDataTool(), NewsDataTool()]
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.3)
+    
+    async def research_company(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Use tools to fetch data (no duplicate methods)
+        stock_tool = self._get_tool_by_name("stock_data_fetcher")
+        news_tool = self._get_tool_by_name("news_data_fetcher")
         
-    async def research_company(self, query: str) -> Dict[str, Any]:
-        # Fetch comprehensive data for analysis
-        return await self.execute_task(task, workflow_state)
+        # Execute tools for data collection
+        stock_result = await stock_tool._arun(ticker, company_name)
+        news_result = await news_tool._arun(company_name, ticker)
+        
+        return self._compile_research_results(stock_result, news_result)
 ```
 
 ### 📈 Analysis Agent
@@ -333,6 +313,10 @@ class ResearchAgent:
 
 ```python
 class AnalysisAgent:
+    def __init__(self):
+        # Simplified initialization - no config required
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.7)
+    
     async def analyze_stock(self, stock_data: StockData) -> Dict[str, Any]:
         # Comprehensive technical analysis using GPT-4
         analysis_input = self._prepare_analysis_input(stock_data)
@@ -354,6 +338,10 @@ class AnalysisAgent:
 
 ```python
 class SentimentAgent:
+    def __init__(self):
+        # Simplified initialization
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.5)
+    
     async def analyze_sentiment(self, news_data: NewsData) -> Dict[str, Any]:
         # Analyze sentiment of multiple news articles
         sentiment_input = self._prepare_sentiment_input(news_data)
@@ -375,6 +363,10 @@ class SentimentAgent:
 
 ```python
 class SummarizationAgent:
+    def __init__(self):
+        # Simplified initialization
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.6)
+    
     async def create_summary(self, workflow_state: WorkflowState) -> Dict[str, Any]:
         # Create comprehensive summary from all analysis data
         summary_input = self._prepare_summary_input(workflow_state)
@@ -385,295 +377,84 @@ class SummarizationAgent:
         return await self._process_summary_result(result, workflow_state)
 ```
 
-### 🔧 LangGraph Workflow Integration
-
-Each agent integrates seamlessly with the LangGraph workflow:
-
-```python
-# LangGraph workflow definition
-workflow = StateGraph(GraphState)
-workflow.add_node("initialize", self._initialize_workflow)
-workflow.add_node("ticker_lookup", self._ticker_lookup_step)
-workflow.add_node("research", self._research_step)
-workflow.add_node("analysis", self._analysis_step)
-workflow.add_node("sentiment", self._sentiment_step)
-workflow.add_node("summarization", self._summarization_step)
-workflow.add_node("finalize", self._finalize_workflow)
-
-# Sequential execution flow
-workflow.set_entry_point("initialize")
-workflow.add_edge("initialize", "ticker_lookup")
-workflow.add_edge("ticker_lookup", "research")
-workflow.add_edge("research", "analysis")
-workflow.add_edge("analysis", "sentiment")
-workflow.add_edge("sentiment", "summarization")
-workflow.add_edge("summarization", "finalize")
-workflow.add_edge("finalize", END)
-
-# Compile and execute
-app = workflow.compile()
-result = await app.ainvoke(initial_state)
-```
-
-### 🔄 Workflow Execution Flow
-
-1. **Initialize**: Set up workflow state and prepare for execution
-2. **Ticker Lookup**: Resolve company name to ticker symbol using AI
-3. **Research**: Fetch stock data and news articles
-4. **Analysis**: Perform technical analysis on stock data
-5. **Sentiment**: Analyze news sentiment and extract themes
-6. **Summarization**: Create comprehensive final summary
-7. **Finalize**: Clean up and prepare final output
-
-### 🧠 AI Integration Details
-
-- **GPT-4 Model**: All agents use GPT-4 for intelligent analysis
-- **Specialized Prompts**: Each agent has custom prompts for optimal performance
-- **Temperature Control**: Different temperature settings for different tasks
-- **Memory Management**: Conversation history for context retention
-- **Error Recovery**: Automatic retry logic with exponential backoff
-
-### 📊 Data Flow
-
-```
-User Query → Ticker Lookup → Stock Data + News Data → Analysis + Sentiment → Final Summary
-```
-
-Each step enriches the workflow state with additional data:
-- **Ticker & Company**: Resolved identifiers
-- **Stock Data**: Price history, movements, technical indicators
-- **News Data**: Recent articles, publication dates, sources
-- **Analysis Results**: Technical insights, trends, support/resistance
-- **Sentiment Results**: Overall sentiment, themes, market impact
-- **Final Summary**: Comprehensive analysis report
-
-## 🔧 Agent Data Models
-
-### 📊 Core Data Models
-```python
-class AgentState(BaseModel):
-    """Global state shared across all agents"""
-    session_id: str
-    query: str
-    ticker: Optional[str] = None
-    company_name: Optional[str] = None
-    collected_data: Optional[CollectedData] = None
-    analyses: Dict[str, Any] = Field(default_factory=dict)
-    summary: Optional[StockSummary] = None
-    metadata: AgentMetadata = Field(default_factory=AgentMetadata)
-
-374|
-class TechnicalAnalysisAgent(BaseAgent):
-    def __init__(self):
-        self.indicators = TechnicalIndicators()
-        self.llm = ChatOpenAI(model="gpt-4", temperature=0.3)
-    
-    async def analyze_technical(self, stock_data: StockData) -> TechnicalAnalysis:
-        # Calculate technical indicators
-        indicators = self.indicators.calculate_all(stock_data)
-        
-        # AI-powered analysis using LLM
-        analysis = await self.llm.ainvoke(self._create_analysis_prompt(indicators))
-        
-        return TechnicalAnalysis.from_llm_response(analysis)
-```
-
-### 📰 Sentiment Analysis Agent
-**Role**: Analyzes market sentiment from news and social media
-**Capabilities**:
-- News sentiment analysis
-- Social media sentiment tracking
-- Market mood assessment
-- Sentiment trend analysis
-
-```python
-class SentimentAnalysisAgent(BaseAgent):
-    def __init__(self):
-        self.sentiment_analyzer = SentimentAnalyzer()
-        self.llm = ChatOpenAI(model="gpt-4", temperature=0.5)
-    
-    async def analyze_sentiment(self, news_data: NewsData) -> SentimentAnalysis:
-        # Analyze individual article sentiments
-        article_sentiments = await self.sentiment_analyzer.analyze_batch(news_data.articles)
-        
-        # Aggregate and contextualize using LLM
-        overall_sentiment = await self.llm.ainvoke(
-            self._create_sentiment_prompt(article_sentiments)
-        )
-        
-        return SentimentAnalysis.from_aggregated_data(overall_sentiment)
-```
-
-### 🎯 Risk Assessment Agent
-**Role**: Evaluates investment risks and opportunities
-**Capabilities**:
-- Financial risk analysis
-- Market risk assessment
-- Regulatory risk evaluation
-- Opportunity identification
-
-```python
-class RiskAssessmentAgent(BaseAgent):
-    def __init__(self):
-        self.risk_models = RiskModels()
-        self.llm = ChatOpenAI(model="gpt-4", temperature=0.4)
-    
-    async def assess_risk(self, analysis_data: AnalysisData) -> RiskAssessment:
-        # Calculate risk metrics
-        risk_metrics = self.risk_models.calculate_risk_metrics(analysis_data)
-        
-        # AI-powered risk assessment
-        risk_analysis = await self.llm.ainvoke(
-            self._create_risk_prompt(risk_metrics)
-        )
-        
-        return RiskAssessment.from_analysis(risk_analysis)
-```
-
-### 📝 Summarization Agent
-**Role**: Creates comprehensive natural language summaries
-**Capabilities**:
-- Executive summary generation
-- Key insights extraction
-- Recommendation synthesis
-- Multi-format output (text, structured data)
-
-```python
-class SummarizationAgent(BaseAgent):
-    def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4", temperature=0.6)
-    
-    async def create_summary(self, all_analyses: CompleteAnalysis) -> StockSummary:
-        # Generate comprehensive summary using all analysis data
-        summary = await self.llm.ainvoke(
-            self._create_summary_prompt(all_analyses)
-        )
-        
-        return StockSummary.from_llm_summary(summary)
-```
-
-## 🔧 Agent Data Models
-
-### 📊 Core Data Models
-```python
-class AgentState(BaseModel):
-    """Global state shared across all agents"""
-    session_id: str
-    query: str
-    ticker: Optional[str] = None
-    company_name: Optional[str] = None
-    collected_data: Optional[CollectedData] = None
-    analyses: Dict[str, Any] = Field(default_factory=dict)
-    summary: Optional[StockSummary] = None
-    metadata: AgentMetadata = Field(default_factory=AgentMetadata)
-
-class CollectedData(BaseModel):
-    """Data collected by DataCollectionAgent"""
-    ticker: str
-    stock_data: StockData
-    news_data: NewsData
-    market_data: MarketData
-    collection_timestamp: datetime = Field(default_factory=datetime.now)
-
-class TechnicalAnalysis(BaseModel):
-    """Technical analysis results"""
-    trend_direction: TrendDirection
-    trend_strength: float
-    support_levels: List[float]
-    resistance_levels: List[float]
-    key_indicators: Dict[str, float]
-    technical_summary: str
-
-class SentimentAnalysis(BaseModel):
-    """Sentiment analysis results"""
-    overall_sentiment: SentimentType
-    sentiment_score: float  # -1 to 1
-    news_sentiment: NewsSentiment
-    market_mood: str
-    sentiment_trends: List[SentimentTrend]
-
-class RiskAssessment(BaseModel):
-    """Risk assessment results"""
-    overall_risk_level: RiskLevel
-    risk_factors: List[RiskFactor]
-    opportunities: List[Opportunity]
-    risk_score: float  # 0 to 1
-    recommendations: List[str]
-
-class StockSummary(BaseModel):
-    """Final comprehensive summary"""
-    company_name: str
-    ticker: str
-    executive_summary: str
-    price_analysis: str
-    sentiment_analysis: str
-    risk_assessment: str
-    recommendations: List[str]
-    confidence_score: float
-```
-
 ## 🔐 Configuration
 
-### Environment Variables
+### Simplified Environment Configuration
+
+The system now uses a streamlined configuration approach with minimal required settings:
+
 ```env
-# Required
+# ===============================================================================
+# STOCK SUMMARY AGENT - ENVIRONMENT CONFIGURATION
+# ===============================================================================
+
+# OpenAI API Configuration (REQUIRED)
 OPENAI_API_KEY=your_openai_api_key_here
 
-# Optional
+# NewsAPI Configuration (OPTIONAL - for enhanced news coverage)
+# Get your free API key from: https://newsapi.org/register
 NEWS_API_KEY=your_news_api_key_here
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
 
-# FastAPI Configuration
+# ===============================================================================
+# BASIC CONFIGURATION
+# ===============================================================================
+
+# Default number of days for stock analysis
+STOCK_AGENT_DEFAULT_ANALYSIS_DAYS=7
+
+# Maximum number of news articles to fetch
+STOCK_AGENT_MAX_NEWS_ARTICLES=5
+
+# ===============================================================================
+# LLM CONFIGURATION
+# ===============================================================================
+
+# OpenAI Model Configuration
+OPENAI_MODEL=gpt-4
+OPENAI_TEMPERATURE=0.7
+OPENAI_MAX_TOKENS=1000
+
+# ===============================================================================
+# FASTAPI CONFIGURATION
+# ===============================================================================
+
+# FastAPI server configuration
 FASTAPI_HOST=0.0.0.0
 FASTAPI_PORT=8000
-FASTAPI_WORKERS=4
-FASTAPI_RELOAD=false
+FASTAPI_RELOAD=true
 
-# Agent Configuration
-COORDINATOR_AGENT_TEMPERATURE=0.3
-TECHNICAL_AGENT_TEMPERATURE=0.3
-SENTIMENT_AGENT_TEMPERATURE=0.5
-RISK_AGENT_TEMPERATURE=0.4
-SUMMARY_AGENT_TEMPERATURE=0.6
+# ===============================================================================
+# SYSTEM CONFIGURATION
+# ===============================================================================
 
-# System Configuration
-MAX_CONCURRENT_REQUESTS=10
-AGENT_TIMEOUT_SECONDS=30
+# Logging level (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL=INFO
+
+# Enable verbose logging for debugging
+VERBOSE_LOGGING=false
+
+# Maximum retry attempts for failed operations
 MAX_RETRY_ATTEMPTS=3
-CACHE_TTL_MINUTES=15
+
+# Timeout for agent operations (in seconds)
+AGENT_TIMEOUT_SECONDS=30
+
+# ===============================================================================
+# DEVELOPMENT CONFIGURATION
+# ===============================================================================
+
+# Enable development mode (more verbose logging, relaxed error handling)
+DEVELOPMENT_MODE=false
+
+# Enable debug mode for agents
+DEBUG_AGENTS=false
 ```
 
-## 🚀 Deployment
-
-### 🐳 Docker Deployment
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-```bash
-# Build and run
-docker build -t stock-agent .
-docker run -p 8000:8000 --env-file .env stock-agent
-```
-
-### ☁️ Production Deployment
-```bash
-# Using gunicorn for production
-gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
-
-# Using systemd service
-sudo systemctl enable stock-agent
-sudo systemctl start stock-agent
-```
+### Key Simplifications:
+- **No agent-specific configurations** (temperatures are hardcoded in agents)
+- **No complex caching configuration** (kept simple)
+- **No unnecessary data source toggles** (services handle availability automatically)
+- **No performance tuning knobs** (sensible defaults)
 
 ## 🧪 Testing
 
@@ -689,150 +470,15 @@ python -m pytest tests/test_api.py -v
 python -m pytest tests/test_integration.py -v
 ```
 
-### API Testing
+### Quick API Test
 ```bash
-# Test API endpoints
+# Test the main analysis endpoint
 curl -X POST "http://localhost:8000/analyze" \
   -H "Content-Type: application/json" \
   -d '{"query": "Test Apple stock"}'
 
-# Load testing
-ab -n 100 -c 10 http://localhost:8000/health
-```
-
-## 📊 Monitoring & Logging
-
-### 📈 Metrics
-- **Agent Performance**: Response times, success rates
-- **API Metrics**: Request rates, error rates
-- **Resource Usage**: Memory, CPU, API calls
-- **Business Metrics**: Analysis accuracy, user satisfaction
-
-### 📋 Logging
-```python
-import logging
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-# Configure structured logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-app = FastAPI(title="Stock Summary Agent", version="2.0.0")
-
-# Add middleware for request logging
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    
-    logger.info(f"Request: {request.method} {request.url} - "
-                f"Status: {response.status_code} - "
-                f"Time: {process_time:.2f}s")
-    
-    return response
-```
-
-## 🔍 Usage Examples
-
-### 🐍 Python Client
-```python
-import httpx
-import asyncio
-
-class StockAnalysisClient:
-    def __init__(self, base_url="http://localhost:8000"):
-        self.base_url = base_url
-    
-    async def analyze_stock(self, query: str) -> dict:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/analyze",
-                json={"query": query}
-            )
-            return response.json()
-    
-    async def batch_analyze(self, queries: list) -> dict:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/batch-analyze",
-                json={"queries": queries}
-            )
-            return response.json()
-
-# Usage
-client = StockAnalysisClient()
-result = asyncio.run(client.analyze_stock("Tell me about Apple stock"))
-print(result["analysis"]["executive_summary"])
-```
-
-### 🌐 JavaScript Client
-```javascript
-class StockAnalysisClient {
-    constructor(baseUrl = "http://localhost:8000") {
-        this.baseUrl = baseUrl;
-    }
-    
-    async analyzeStock(query) {
-        const response = await fetch(`${this.baseUrl}/analyze`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
-        });
-        return await response.json();
-    }
-    
-    async batchAnalyze(queries) {
-        const response = await fetch(`${this.baseUrl}/batch-analyze`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ queries })
-        });
-        return await response.json();
-    }
-}
-
-// Usage
-const client = new StockAnalysisClient();
-const result = await client.analyzeStock("Tell me about Apple stock");
-console.log(result.analysis.executive_summary);
-```
-
-### 📱 cURL Examples
-```bash
-# Single stock analysis
-curl -X POST "http://localhost:8000/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Tell me about Apple stock",
-    "options": {
-      "include_technical": true,
-      "include_sentiment": true,
-      "days_history": 30
-    }
-  }'
-
-# Batch analysis
-curl -X POST "http://localhost:8000/batch-analyze" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queries": [
-      "Apple stock analysis",
-      "Tesla outlook",
-      "Microsoft performance"
-    ],
-    "options": {
-      "concurrent": true
-    }
-  }'
-
-# Validate ticker
-curl -X POST "http://localhost:8000/validate-ticker" \
-  -H "Content-Type: application/json" \
-  -d '{"company_name": "Apple Inc."}'
+# Health check
+curl "http://localhost:8000/health"
 ```
 
 ## 🛡️ Security & Rate Limiting
@@ -870,57 +516,14 @@ async def analyze_stock(request: Request, query: AnalysisRequest):
     pass
 ```
 
-## 📈 Performance Optimization
-
-### 🚀 Caching
-```python
-from functools import lru_cache
-import redis
-
-# Redis cache for API responses
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
-
-@lru_cache(maxsize=100)
-def get_stock_data_cached(ticker: str, days: int):
-    cache_key = f"stock_data:{ticker}:{days}"
-    cached_data = redis_client.get(cache_key)
-    
-    if cached_data:
-        return json.loads(cached_data)
-    
-    # Fetch new data
-    data = fetch_stock_data(ticker, days)
-    redis_client.setex(cache_key, 300, json.dumps(data))  # 5 min TTL
-    return data
-```
-
-### ⚡ Async Processing
-```python
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-class AsyncAgentManager:
-    def __init__(self):
-        self.executor = ThreadPoolExecutor(max_workers=4)
-    
-    async def process_parallel(self, tasks: list):
-        # Run CPU-intensive tasks in thread pool
-        loop = asyncio.get_event_loop()
-        results = await asyncio.gather(*[
-            loop.run_in_executor(self.executor, task)
-            for task in tasks
-        ])
-        return results
-```
-
 ## 🔧 Troubleshooting
 
 ### Common Issues
 
 #### 1. **Agent Initialization Errors**
 ```bash
-Error: Failed to initialize CoordinatorAgent
-Solution: Check OpenAI API key and model permissions
+Error: Failed to initialize agents
+Solution: Check OpenAI API key in .env file
 ```
 
 #### 2. **FastAPI Server Issues**
@@ -929,27 +532,41 @@ Error: uvicorn: command not found
 Solution: pip install uvicorn[standard]
 ```
 
-#### 3. **Agent Timeout Errors**
+#### 3. **Missing API Keys**
 ```bash
-Error: Agent execution timeout
-Solution: Increase AGENT_TIMEOUT_SECONDS in .env
+Error: OpenAI API key not found
+Solution: Set OPENAI_API_KEY in .env file
 ```
 
-#### 4. **Rate Limiting**
+#### 4. **News API Issues**
 ```bash
-Error: Rate limit exceeded
-Solution: Implement proper rate limiting and retry logic
+Error: News data unavailable
+Solution: News API key is optional - system works without it
 ```
 
 ### Debug Mode
 ```bash
 # Enable debug logging
 export LOG_LEVEL=DEBUG
-uvicorn main:app --reload --log-level debug
+uvicorn app:app --reload --log-level debug
 
 # Monitor agent performance
 curl http://localhost:8000/health
 ```
+
+## 🎯 Recent Improvements
+
+### ✅ Architecture Refactoring (Latest)
+- **Simplified Tool Architecture**: Tools now directly access services without redundancy
+- **Removed Configuration Dependencies**: Agents no longer require complex configuration
+- **Cleaner Separation of Concerns**: Tools handle data fetching, agents handle orchestration
+- **Streamlined Environment Setup**: Minimal required configuration for easier setup
+
+### ✅ Key Benefits
+- **Reduced Complexity**: Fewer configuration options to manage
+- **Better Maintainability**: Single source of truth for data fetching
+- **Improved Performance**: Direct service access without unnecessary layers
+- **Easier Deployment**: Simplified environment configuration
 
 ## 🎯 Roadmap
 
@@ -967,14 +584,5 @@ curl http://localhost:8000/health
 - [ ] **Enterprise SSO integration**
 - [ ] **Audit logging and compliance**
 
-## 📄 License
-
-This project is open source and available under the MIT License.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
----
 
 **🎉 Ready to analyze stocks with AI agents? Start the FastAPI server and explore the interactive docs at http://localhost:8000/docs!**
