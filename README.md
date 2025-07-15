@@ -4,63 +4,44 @@ A sophisticated AI-powered stock analysis platform featuring a complete agent-ba
 
 ## 🏗️ Architecture Overview
 
-**Complete Agent-Based System**: Every component is an intelligent agent that collaborates through LangGraph workflows with comprehensive state management:
+**Complete Agent-Based System**: Every component is an intelligent agent that collaborates through LangGraph workflows:
 
 ```mermaid
 graph TB
     subgraph "Client Layer"
         A[REST API Client] --> B[FastAPI Backend]
-        C[CLI Client] --> D[CLI Interface]
     end
     
     subgraph "Coordination & Orchestration Layer"
-        B --> E[Coordinator Agent]
-        D --> E
-        E --> F[LangGraph StateGraph]
-        F --> G[Workflow Compiler]
-    end
-    
-    subgraph "State Management Layer"
-        H[GraphState] --> I[WorkflowState]
-        I --> J[AgentState]
-        J --> K[Task Tracking]
-        F -.-> H
-        G -.-> I
+        B --> C[Coordinator Agent]
+        C --> D[LangGraph StateGraph]
     end
     
     subgraph "Agent Execution Layer"
-        F --> L[Ticker Lookup Agent]
-        F --> M[Research Agent]
-        F --> N[Analysis Agent]
-        F --> O[Sentiment Agent]
-        F --> P[Summarization Agent]
+        D --> E[Ticker Lookup Agent]
+        D --> F[Research Agent]
+        D --> G[Analysis Agent]
+        D --> H[Sentiment Agent]
+        D --> I[Summarization Agent]
     end
     
     subgraph "Tool Layer"
-        M --> Q[StockDataTool]
-        M --> R[NewsDataTool]
-        L --> S[AI Lookup Tool]
+        F --> J[StockDataTool]
+        F --> K[NewsDataTool]
+        E --> L[AI Lookup Tool]
     end
     
     subgraph "Service Layer"
-        Q --> T[StockDataFetcher]
-        R --> U[NewsFetcher]
-        S --> V[LLM Service]
+        J --> M[StockDataFetcher]
+        K --> N[NewsFetcher]
+        L --> O[LLM Service]
     end
     
     subgraph "External Data Sources"
-        T --> W[Yahoo Finance API]
-        U --> X[NewsAPI]
-        U --> Y[Google News]
-        V --> Z[OpenAI GPT-4]
-    end
-    
-    subgraph "Data Models"
-        AA[StockData] --> I
-        BB[NewsData] --> I
-        CC[TechnicalAnalysis] --> I
-        DD[SentimentAnalysis] --> I
-        EE[StockSummary] --> I
+        M --> P[Yahoo Finance API]
+        N --> Q[NewsAPI]
+        N --> R[Google News]
+        O --> S[OpenAI GPT-4]
     end
 ```
 
@@ -85,12 +66,20 @@ The AI Stock Agent uses a sophisticated multi-layered state management system po
    - Tracks completed, failed, and active tasks
    - Maintains agent-specific memory and context
 
-4. **Data Models** - Structured data representations
-   - `StockData`: Company info, price movements, technical indicators
-   - `NewsData`: Articles collection with metadata and timestamps
-   - `TechnicalAnalysis`: Analysis results with trends and insights
-   - `SentimentAnalysis`: News sentiment with scores and themes
-   - `StockSummary`: Final comprehensive analysis report
+4. **Chat Conversations** - Conversational context management
+   - `ConversationBufferMemory`: Stores chat history for each agent
+   - **Context Retention**: Agents remember previous interactions
+   - **Contextual Analysis**: Each analysis builds on conversation history
+   - **Multi-turn Support**: Supports follow-up questions and refinements
+   - **Memory Sharing**: Agents can access shared conversation context for continuity
+
+### Chat-Enabled Features
+
+- **Follow-up Questions**: "Tell me more about Apple's technical indicators"
+- **Contextual Refinement**: "Focus on the last 30 days instead"
+- **Cross-reference Queries**: "How does this compare to Microsoft?"
+- **Progressive Analysis**: Each interaction builds deeper insights
+- **Conversation History**: Full audit trail of user interactions
 
 ### State Flow Benefits
 
@@ -98,7 +87,7 @@ The AI Stock Agent uses a sophisticated multi-layered state management system po
 - **Transparency**: Full visibility into what each agent accomplished
 - **Debugging**: Easy to trace where issues occur in the workflow
 - **Extensibility**: New agents can easily access existing state data
-- **Consistency**: All agents work with the same shared data models
+- **Conversation Continuity**: Maintains context across multiple interactions
 
 ## 📁 Project Structure
 
@@ -270,14 +259,7 @@ curl -X POST "http://localhost:8000/batch-analyze" \
 -d '{"queries": ["Apple stock", "Microsoft analysis", "Google trends"]}'
 ```
 
-### 3. Ticker Validation
-```bash
-curl -X POST "http://localhost:8000/validate-ticker" \
--H "Content-Type: application/json" \
--d '{"company_name": "Apple"}'
-```
-
-### 4. Health Check
+### 3. Health Check
 ```bash
 curl "http://localhost:8000/health"
 ```
