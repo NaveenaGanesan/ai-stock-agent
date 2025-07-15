@@ -13,7 +13,7 @@ class StockDataFetcher:
     def __init__(self):
         self.cache = {}
         
-    def get_stock_info(self, ticker: str) -> Optional[Dict[str, Any]]:
+    def get_stock_info(self, ticker: str, company_name: str) -> Optional[Dict[str, Any]]:
         """Get basic stock information."""
         try:
             stock = yf.Ticker(ticker.upper())
@@ -33,14 +33,14 @@ class StockDataFetcher:
                 'business_summary': info.get('longBusinessSummary', 'N/A')
             }
             
-            log_info(f"Successfully fetched stock info for {ticker}")
+            log_info(f"Successfully fetched stock info for {company_name}")
             return stock_info
             
         except Exception as e:
-            log_error(f"Error fetching stock info for {ticker}: {str(e)}")
+            log_error(f"Error fetching stock info for {company_name}: {str(e)}")
             return None
     
-    def get_price_data(self, ticker: str, days: int = 7) -> Optional[pd.DataFrame]:
+    def get_price_data(self, ticker: str, company_name: str, days: int = 7) -> Optional[pd.DataFrame]:
         """Get historical price data for the specified number of days."""
         try:
             start_date, end_date = get_date_range(days)
@@ -49,14 +49,14 @@ class StockDataFetcher:
             hist = stock.history(start=start_date, end=end_date)
             
             if hist.empty:
-                log_error(f"No price data found for {ticker}")
+                log_error(f"No price data found for {company_name}")
                 return None
                 
-            log_info(f"Successfully fetched {len(hist)} days of price data for {ticker}")
+            log_info(f"Successfully fetched {len(hist)} days of price data for {company_name}")
             return hist
             
         except Exception as e:
-            log_error(f"Error fetching price data for {ticker}: {str(e)}")
+            log_error(f"Error fetching price data for {company_name}: {str(e)}")
             return None
     
     def calculate_price_movements(self, price_data: pd.DataFrame) -> Dict[str, Any]:
@@ -120,16 +120,16 @@ class StockDataFetcher:
             log_error(f"Error calculating price movements: {str(e)}")
             return {}
     
-    def get_comprehensive_data(self, ticker: str, days: int = 7) -> Dict[str, Any]:
+    def get_comprehensive_data(self, ticker: str, company_name: str, days: int = 7) -> Dict[str, Any]:
         """Get comprehensive stock data including info, prices, and movements."""
         try:
             # Get stock info
-            stock_info = self.get_stock_info(ticker)
+            stock_info = self.get_stock_info(ticker, company_name)
             if not stock_info:
                 return {}
             
             # Get price data
-            price_data = self.get_price_data(ticker, days)
+            price_data = self.get_price_data(ticker, company_name, days)
             if price_data is None:
                 return stock_info
             
@@ -145,11 +145,11 @@ class StockDataFetcher:
                 'last_updated': datetime.now().isoformat()
             }
             
-            log_info(f"Successfully compiled comprehensive data for {ticker}")
+            log_info(f"Successfully compiled comprehensive data for {company_name}")
             return comprehensive_data
             
         except Exception as e:
-            log_error(f"Error getting comprehensive data for {ticker}: {str(e)}")
+            log_error(f"Error getting comprehensive data for {company_name}: {str(e)}")
             return {}
     
     def validate_ticker(self, ticker: str) -> bool:

@@ -335,7 +335,7 @@ Volatility is at {movements.volatility:.2%} with average volume of {movements.av
     
     async def _execute_with_retry(self, func, *args, **kwargs):
         """Execute function with retry logic."""
-        max_retries = self.config.get("retry_attempts", 3)
+        max_retries = 3  # Removed config dependency
         
         for attempt in range(max_retries + 1):
             try:

@@ -321,7 +321,7 @@ class CoordinatorAgent:
             }
             
             # Use enhanced research method
-            result = await self.research_agent.research_company_enhanced(research_context)
+            result = await self.research_agent.research_company(research_context)
             
             if result["success"]:
                 # Update workflow state with research results

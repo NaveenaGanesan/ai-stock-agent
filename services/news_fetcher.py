@@ -64,7 +64,7 @@ class NewsFetcher:
             
             # Remove duplicates and sort by date
             unique_news = self._deduplicate_news(all_news)
-            sorted_news = sorted(unique_news, key=lambda x: x.get('published_date', datetime.min), reverse=True)
+            sorted_news = sorted(unique_news, key=lambda x: x.get('published_date', datetime(1900, 1, 1)), reverse=True)
             
             # Return top articles
             result = sorted_news[:limit]
@@ -133,8 +133,16 @@ class NewsFetcher:
             }
             
             response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
             
+            # Handle specific HTTP error codes
+            if response.status_code == 401:
+                log_error("NewsAPI: Invalid API key, skipping NewsAPI for future requests")
+                return []
+            elif response.status_code == 429:
+                log_error("NewsAPI: Rate limit exceeded, skipping this request")
+                return []
+            
+            response.raise_for_status()
             data = response.json()
             
             news_articles = []
@@ -203,7 +211,7 @@ class NewsFetcher:
                     continue
             
             # Return most recent articles
-            sorted_articles = sorted(all_articles, key=lambda x: x.get('published_date', datetime.min), reverse=True)
+            sorted_articles = sorted(all_articles, key=lambda x: x.get('published_date', datetime(1900, 1, 1)), reverse=True)
             return sorted_articles[:limit]
             
         except Exception as e:
@@ -252,15 +260,21 @@ class NewsFetcher:
             
             # Common date formats
             formats = [
-                '%a, %d %b %Y %H:%M:%S %z',  # RSS format
+                '%a, %d %b %Y %H:%M:%S %z',  # RSS format with timezone
+                '%a, %d %b %Y %H:%M:%S GMT', # RSS format with GMT
                 '%Y-%m-%dT%H:%M:%SZ',        # ISO format
                 '%Y-%m-%d %H:%M:%S',         # Simple format
                 '%Y-%m-%d',                  # Date only
+                '%a, %d %b %Y %H:%M:%S',     # RSS without timezone
             ]
             
             for fmt in formats:
                 try:
-                    return datetime.strptime(date_string, fmt)
+                    parsed_date = datetime.strptime(date_string, fmt)
+                    # Convert timezone-aware dates to naive (remove timezone info)
+                    if parsed_date.tzinfo is not None:
+                        parsed_date = parsed_date.replace(tzinfo=None)
+                    return parsed_date
                 except ValueError:
                     continue
             
@@ -330,7 +344,7 @@ class NewsFetcher:
                     continue
             
             # Sort by date and return top articles
-            sorted_news = sorted(all_news, key=lambda x: x.get('published_date', datetime.min), reverse=True)
+            sorted_news = sorted(all_news, key=lambda x: x.get('published_date', datetime(1900, 1, 1)), reverse=True)
             return sorted_news[:limit]
             
         except Exception as e:
