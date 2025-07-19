@@ -45,50 +45,6 @@ graph TB
     end
 ```
 
-## 🔄 State Management Architecture
-
-The AI Stock Agent uses a sophisticated multi-layered state management system powered by LangGraph:
-
-### State Layers Explained
-
-1. **GraphState** - Top-level workflow orchestration state
-   - Manages overall execution flow and agent coordination
-   - Tracks current step, errors, and execution metadata
-   - Contains references to all other state layers
-
-2. **WorkflowState** - Business logic and data aggregation state
-   - Stores ticker, company name, and user query
-   - Accumulates data from all agents (stock_data, news_data, etc.)
-   - Tracks data sources and processing steps
-
-3. **AgentState** - Individual agent execution state
-   - Manages agent-specific tasks and their status
-   - Tracks completed, failed, and active tasks
-   - Maintains agent-specific memory and context
-
-4. **Chat Conversations** - Conversational context management
-   - `ConversationBufferMemory`: Stores chat history for each agent
-   - **Context Retention**: Agents remember previous interactions
-   - **Contextual Analysis**: Each analysis builds on conversation history
-   - **Multi-turn Support**: Supports follow-up questions and refinements
-   - **Memory Sharing**: Agents can access shared conversation context for continuity
-
-### Chat-Enabled Features
-
-- **Follow-up Questions**: "Tell me more about Apple's technical indicators"
-- **Contextual Refinement**: "Focus on the last 30 days instead"
-- **Cross-reference Queries**: "How does this compare to Microsoft?"
-- **Progressive Analysis**: Each interaction builds deeper insights
-- **Conversation History**: Full audit trail of user interactions
-
-### State Flow Benefits
-
-- **Fault Tolerance**: State can be recovered at any step if agents fail
-- **Transparency**: Full visibility into what each agent accomplished
-- **Debugging**: Easy to trace where issues occur in the workflow
-- **Extensibility**: New agents can easily access existing state data
-- **Conversation Continuity**: Maintains context across multiple interactions
-
 ## 📁 Project Structure
 
 ```
@@ -115,64 +71,6 @@ ai-stock-agent/
 ├── env.example                      # Environment variables template
 ├── requirements.txt                 # Python dependencies
 └── README.md                       # This file
-```
-
-## 🔧 LangChain & LangGraph Architecture
-
-### How LangChain is Used
-
-**LangChain** provides the foundation for our AI agent system:
-
-1. **LLM Integration**: Each agent uses `ChatOpenAI` from LangChain to interact with GPT-4
-2. **Agent Framework**: Agents use LangChain's agent framework with tools and memory
-3. **Prompt Templates**: Structured prompts using `ChatPromptTemplate` and `MessagesPlaceholder`
-4. **Memory Management**: Each agent has `ConversationBufferMemory` for context retention
-5. **Tool Integration**: Custom tools for stock data, news fetching, and ticker lookup
-
-### How LangGraph is Used
-
-**LangGraph** orchestrates the entire workflow as a state machine:
-
-1. **State Management**: `GraphState` tracks the complete workflow state
-2. **Workflow Orchestration**: Sequential execution of agents through defined nodes
-3. **Error Handling**: Robust error propagation and state recovery
-4. **Parallel Processing**: Efficient execution of independent tasks
-
-### Agent Workflow with State Management
-
-```mermaid
-graph TB
-    A[User Query] --> B[Initialize GraphState]
-    B --> C[Ticker Lookup Step]
-    C --> D[Update WorkflowState]
-    D --> E[Research Step]
-    E --> F[Update StockData & NewsData]
-    F --> G[Analysis Step]
-    G --> H[Update TechnicalAnalysis]
-    H --> I[Sentiment Step]
-    I --> J[Update SentimentAnalysis]
-    J --> K[Summarization Step]
-    K --> L[Create Final Summary]
-    L --> M[Return Response]
-    
-    subgraph "State Flow"
-        N[GraphState] --> O[WorkflowState]
-        O --> P[AgentStates]
-        P --> Q[Task Tracking]
-        Q --> R[Data Models]
-        R --> S[Final Output]
-    end
-    
-    subgraph "Error Handling"
-        T[Retry Logic] --> U[State Recovery]
-        U --> V[Graceful Degradation]
-    end
-    
-    C -.-> N
-    E -.-> O
-    G -.-> P
-    I -.-> Q
-    K -.-> R
 ```
 
 ## 🚀 Quick Start
@@ -262,6 +160,108 @@ curl -X POST "http://localhost:8000/batch-analyze" \
 ### 3. Health Check
 ```bash
 curl "http://localhost:8000/health"
+```
+
+## 🔄 State Management Architecture
+
+The AI Stock Agent uses a sophisticated multi-layered state management system powered by LangGraph:
+
+### State Layers Explained
+
+1. **GraphState** - Top-level workflow orchestration state
+   - Manages overall execution flow and agent coordination
+   - Tracks current step, errors, and execution metadata
+   - Contains references to all other state layers
+
+2. **WorkflowState** - Business logic and data aggregation state
+   - Stores ticker, company name, and user query
+   - Accumulates data from all agents (stock_data, news_data, etc.)
+   - Tracks data sources and processing steps
+
+3. **AgentState** - Individual agent execution state
+   - Manages agent-specific tasks and their status
+   - Tracks completed, failed, and active tasks
+   - Maintains agent-specific memory and context
+
+4. **Chat Conversations** - Conversational context management
+   - `ConversationBufferMemory`: Stores chat history for each agent
+   - **Context Retention**: Agents remember previous interactions
+   - **Contextual Analysis**: Each analysis builds on conversation history
+   - **Multi-turn Support**: Supports follow-up questions and refinements
+   - **Memory Sharing**: Agents can access shared conversation context for continuity
+
+### Chat-Enabled Features
+
+- **Follow-up Questions**: "Tell me more about Apple's technical indicators"
+- **Contextual Refinement**: "Focus on the last 30 days instead"
+- **Cross-reference Queries**: "How does this compare to Microsoft?"
+- **Progressive Analysis**: Each interaction builds deeper insights
+- **Conversation History**: Full audit trail of user interactions
+
+### State Flow Benefits
+
+- **Fault Tolerance**: State can be recovered at any step if agents fail
+- **Transparency**: Full visibility into what each agent accomplished
+- **Debugging**: Easy to trace where issues occur in the workflow
+- **Extensibility**: New agents can easily access existing state data
+- **Conversation Continuity**: Maintains context across multiple interactions
+
+## 🔧 LangChain & LangGraph Architecture
+
+### How LangChain is Used
+
+**LangChain** provides the foundation for our AI agent system:
+
+1. **LLM Integration**: Each agent uses `ChatOpenAI` from LangChain to interact with GPT-4
+2. **Agent Framework**: Agents use LangChain's agent framework with tools and memory
+3. **Prompt Templates**: Structured prompts using `ChatPromptTemplate` and `MessagesPlaceholder`
+4. **Memory Management**: Each agent has `ConversationBufferMemory` for context retention
+5. **Tool Integration**: Custom tools for stock data, news fetching, and ticker lookup
+
+### How LangGraph is Used
+
+**LangGraph** orchestrates the entire workflow as a state machine:
+
+1. **State Management**: `GraphState` tracks the complete workflow state
+2. **Workflow Orchestration**: Sequential execution of agents through defined nodes
+3. **Error Handling**: Robust error propagation and state recovery
+4. **Parallel Processing**: Efficient execution of independent tasks
+
+### Agent Workflow with State Management
+
+```mermaid
+graph TB
+    A[User Query] --> B[Initialize GraphState]
+    B --> C[Ticker Lookup Step]
+    C --> D[Update WorkflowState]
+    D --> E[Research Step]
+    E --> F[Update StockData & NewsData]
+    F --> G[Analysis Step]
+    G --> H[Update TechnicalAnalysis]
+    H --> I[Sentiment Step]
+    I --> J[Update SentimentAnalysis]
+    J --> K[Summarization Step]
+    K --> L[Create Final Summary]
+    L --> M[Return Response]
+    
+    subgraph "State Flow"
+        N[GraphState] --> O[WorkflowState]
+        O --> P[AgentStates]
+        P --> Q[Task Tracking]
+        Q --> R[Data Models]
+        R --> S[Final Output]
+    end
+    
+    subgraph "Error Handling"
+        T[Retry Logic] --> U[State Recovery]
+        U --> V[Graceful Degradation]
+    end
+    
+    C -.-> N
+    E -.-> O
+    G -.-> P
+    I -.-> Q
+    K -.-> R
 ```
 
 ## 🤖 Agent Architecture
