@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,11 +16,12 @@ from fastapi.responses import JSONResponse
 
 from services.stock_summary_service import StockSummaryService
 from models import (
+    StockSummary,
     AnalysisRequest,
     BatchAnalysisRequest,
+    HealthResponse,
     AnalysisResponse,
     BatchAnalysisResponse,
-    HealthResponse,
 )
 from utils import log_info, log_error
 

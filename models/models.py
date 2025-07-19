@@ -82,10 +82,10 @@ class StockAgentModels:
     class StockPrice(BaseDataModel):
         """Individual stock price data point."""
         date: datetime
-        open: float = Field(gt=0, description="Opening price")
-        high: float = Field(gt=0, description="High price")
-        low: float = Field(gt=0, description="Low price")
-        close: float = Field(gt=0, description="Closing price")
+        open: float = Field(ge=0, description="Opening price")
+        high: float = Field(ge=0, description="High price")
+        low: float = Field(ge=0, description="Low price")
+        close: float = Field(ge=0, description="Closing price")
         volume: int = Field(ge=0, description="Trading volume")
 
     class StockMovement(BaseDataModel):
@@ -113,7 +113,7 @@ class StockAgentModels:
         sector: Optional[str] = Field(None, description="Business sector")
         industry: Optional[str] = Field(None, description="Industry")
         market_cap: Optional[int] = Field(None, ge=0, description="Market capitalization")
-        current_price: Optional[float] = Field(None, gt=0, description="Current stock price")
+        current_price: Optional[float] = Field(None, ge=0, description="Current stock price")
         currency: str = Field(default="USD", description="Currency")
         exchange: Optional[str] = Field(None, description="Stock exchange")
         website: Optional[str] = Field(None, description="Company website")

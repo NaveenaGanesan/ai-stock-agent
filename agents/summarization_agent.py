@@ -22,10 +22,6 @@ from utils import log_info, log_error, get_env_variable
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# ===============================================================================
-# SUMMARIZATION AGENT
-# ===============================================================================
-
 class SummarizationAgent:
     """Agent responsible for creating final summaries."""
     
@@ -80,13 +76,16 @@ Structure your response with clear sections and bullet points where appropriate.
     
     async def execute_task(self, task: AgentTask, workflow_state: WorkflowState) -> AgentResponse:
         """Execute summarization task."""
+        log_info(f"SummarizationAgent: Starting summarization task for {workflow_state.company_name or 'Unknown'}")
         self.update_state(task, TaskStatus.IN_PROGRESS)
         
         try:
             # Prepare summary input from all available data
+            log_info("SummarizationAgent: Preparing summary input from workflow data")
             summary_input = self._prepare_summary_input(workflow_state)
             
             # Execute summarization using the LLM
+            log_info("SummarizationAgent: Executing LLM summarization")
             result = await self._execute_with_retry(
                 self.llm.ainvoke,
                 [
@@ -94,12 +93,25 @@ Structure your response with clear sections and bullet points where appropriate.
                     HumanMessage(content=f"Create a comprehensive stock summary based on the following data:\n{summary_input}")
                 ]
             )
+            log_info(f"SummarizationAgent: LLM summarization completed ({len(result.content)} characters)")
             
             # Process the summarization result
+            log_info("SummarizationAgent: Processing summarization result")
             output_data = await self._process_summary_result(result, workflow_state)
+            log_info(f"SummarizationAgent: Summarization result processed successfully")
+            
+            # Log key summary insights
+            if 'stock_summary' in output_data:
+                stock_summary = output_data['stock_summary']
+                log_info(f"SummarizationAgent: Stock Summary Created:")
+                log_info(f"   • Company: {stock_summary.company_name} ({stock_summary.ticker})")
+                log_info(f"   • Current Price: ${stock_summary.current_price or 'N/A'}")
+                log_info(f"   • Confidence Level: {stock_summary.confidence_level:.2f}")
+                log_info(f"   • Data Sources: {len(stock_summary.data_sources)} sources")
             
             self.update_state(task, TaskStatus.COMPLETED, output_data)
             
+            log_info("SummarizationAgent: Summarization completed successfully")
             return AgentResponse(
                 agent_type=self.agent_type,
                 success=True,
@@ -109,7 +121,7 @@ Structure your response with clear sections and bullet points where appropriate.
             
         except Exception as e:
             error_msg = f"Summarization failed: {str(e)}"
-            log_error(error_msg)
+            log_error(f"SummarizationAgent: {error_msg}")
             
             self.update_state(task, TaskStatus.FAILED)
             
@@ -123,6 +135,8 @@ Structure your response with clear sections and bullet points where appropriate.
     def _prepare_summary_input(self, workflow_state: WorkflowState) -> str:
         """Prepare comprehensive input for summary generation."""
         try:
+            log_info(f"SummarizationAgent: Preparing summary input for {workflow_state.company_name or 'Unknown'}")
+            
             summary_input = f"""
 STOCK ANALYSIS SUMMARY REQUEST
 
@@ -136,6 +150,7 @@ Query: {workflow_state.input_query}
             # Add stock data if available
             if workflow_state.stock_data:
                 stock_data = workflow_state.stock_data
+                log_info(f"SummarizationAgent: Stock data available for {stock_data.company_info.name}")
                 summary_input += f"""
 STOCK DATA:
 - Current Price: ${stock_data.company_info.current_price:.2f}
@@ -147,10 +162,13 @@ STOCK DATA:
 - Period Low: ${stock_data.movements.period_low:.2f}
 - Average Volume: {stock_data.movements.avg_volume:,.0f}
 """
+            else:
+                log_error("SummarizationAgent: No stock data available in workflow state")
             
             # Add news data if available
             if workflow_state.news_data:
                 news_data = workflow_state.news_data
+                log_info(f"SummarizationAgent: News data available: {news_data.total_articles} articles")
                 summary_input += f"""
 NEWS DATA:
 - Total Articles: {news_data.total_articles}
@@ -158,10 +176,13 @@ NEWS DATA:
 """
                 for i, article in enumerate(news_data.articles[:3]):
                     summary_input += f"  Article {i+1}: {article.title} ({article.source})\n"
+            else:
+                log_error("SummarizationAgent: No news data available in workflow state")
             
             # Add technical analysis if available
             if workflow_state.technical_analysis:
                 tech_analysis = workflow_state.technical_analysis
+                log_info(f"🔧 Technical analysis available with {tech_analysis.trend_direction} trend")
                 summary_input += f"""
 TECHNICAL ANALYSIS:
 - Trend Direction: {tech_analysis.trend_direction}
@@ -171,19 +192,51 @@ TECHNICAL ANALYSIS:
 - Resistance Level: ${tech_analysis.resistance_level} if available
 - Momentum: {tech_analysis.momentum_indicator}
 """
+            else:
+                log_error("SummarizationAgent: No technical analysis available in workflow state")
             
-            # Add sentiment analysis if available
+            # Add sentiment analysis if available - FIX THE ATTRIBUTE ACCESS
             if workflow_state.sentiment_analysis:
                 sentiment_analysis = workflow_state.sentiment_analysis
+                log_info(f"SummarizationAgent: Sentiment analysis available")
+                
+                # Handle both dict and object cases for sentiment analysis
+                if hasattr(sentiment_analysis, 'overall_sentiment'):
+                    # It's a SentimentAnalysis object
+                    overall_sentiment = sentiment_analysis.overall_sentiment
+                    sentiment_score = sentiment_analysis.sentiment_score
+                    positive_articles = sentiment_analysis.positive_articles
+                    negative_articles = sentiment_analysis.negative_articles
+                    neutral_articles = sentiment_analysis.neutral_articles
+                    key_themes = sentiment_analysis.key_themes[:3] if sentiment_analysis.key_themes else []
+                elif isinstance(sentiment_analysis, dict):
+                    # It's a dictionary
+                    overall_sentiment = sentiment_analysis.get('overall_sentiment', 'Neutral')
+                    sentiment_score = sentiment_analysis.get('sentiment_score', 0.0)
+                    positive_articles = sentiment_analysis.get('positive_articles', 0)
+                    negative_articles = sentiment_analysis.get('negative_articles', 0)
+                    neutral_articles = sentiment_analysis.get('neutral_articles', 0)
+                    key_themes = sentiment_analysis.get('key_themes', [])[:3]
+                else:
+                    log_error(f"SummarizationAgent: Unexpected sentiment analysis type: {type(sentiment_analysis)}")
+                    overall_sentiment = 'Unknown'
+                    sentiment_score = 0.0
+                    positive_articles = 0
+                    negative_articles = 0
+                    neutral_articles = 0
+                    key_themes = []
+                
                 summary_input += f"""
 SENTIMENT ANALYSIS:
-- Overall Sentiment: {sentiment_analysis.overall_sentiment}
-- Sentiment Score: {sentiment_analysis.sentiment_score:.2f}
-- Positive Articles: {sentiment_analysis.positive_articles}
-- Negative Articles: {sentiment_analysis.negative_articles}
-- Neutral Articles: {sentiment_analysis.neutral_articles}
-- Key Themes: {', '.join(sentiment_analysis.key_themes[:3])}
+- Overall Sentiment: {overall_sentiment}
+- Sentiment Score: {sentiment_score:.2f}
+- Positive Articles: {positive_articles}
+- Negative Articles: {negative_articles}
+- Neutral Articles: {neutral_articles}
+- Key Themes: {', '.join(key_themes) if key_themes else 'None identified'}
 """
+            else:
+                log_error("SummarizationAgent: No sentiment analysis available in workflow state")
             
             summary_input += """
 === SUMMARY REQUIREMENTS ===
@@ -215,10 +268,11 @@ Please create a comprehensive stock summary that includes:
 
 Format the response as a professional stock analysis report."""
             
+            log_info(f"SummarizationAgent: Summary input prepared successfully ({len(summary_input)} characters)")
             return summary_input
             
         except Exception as e:
-            log_error(f"Error preparing summary input: {str(e)}")
+            log_error(f"SummarizationAgent: Error preparing summary input: {str(e)}")
             return "Error preparing data for summary generation"
     
     async def _process_summary_result(self, result, workflow_state: WorkflowState) -> Dict[str, Any]:
@@ -433,7 +487,3 @@ Format the response as a professional stock analysis report."""
                 "success": False,
                 "error": str(e)
             }
-
-# ===============================================================================
-# EXAMPLE USAGE
-# ===============================================================================

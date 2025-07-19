@@ -22,10 +22,6 @@ from utils import log_info, log_error, get_env_variable
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# ===============================================================================
-# SENTIMENT AGENT
-# ===============================================================================
-
 class SentimentAgent:
     """Agent responsible for news sentiment analysis."""
     
@@ -83,12 +79,14 @@ Provide clear explanations for your sentiment assessments and highlight key fact
     
     async def execute_task(self, task: AgentTask, workflow_state: WorkflowState) -> AgentResponse:
         """Execute sentiment analysis task."""
+        log_info(f"SentimentAgent: Starting sentiment analysis task for {workflow_state.company_name or 'Unknown'}")
         self.update_state(task, TaskStatus.IN_PROGRESS)
         
         try:
             # Get news data from workflow state
             news_data = workflow_state.news_data
             if not news_data:
+                log_error("SentimentAgent: No news data available for sentiment analysis")
                 return AgentResponse(
                     agent_type=self.agent_type,
                     success=False,
@@ -96,10 +94,16 @@ Provide clear explanations for your sentiment assessments and highlight key fact
                     error="Missing news data"
                 )
             
+            log_info(f"SentimentAgent: Processing news data for {news_data.company_name} ({news_data.ticker})")
+            log_info(f"SentimentAgent: News articles count: {news_data.total_articles}")
+            
             # Prepare sentiment analysis input
+            log_info("SentimentAgent: Preparing sentiment analysis input")
             sentiment_input = self._prepare_sentiment_input(news_data)
+            log_info(f"SentimentAgent: Sentiment input prepared ({len(sentiment_input)} characters)")
             
             # Execute sentiment analysis using the LLM
+            log_info("SentimentAgent: Executing LLM sentiment analysis")
             result = await self._execute_with_retry(
                 self.llm.ainvoke,
                 [
@@ -107,12 +111,26 @@ Provide clear explanations for your sentiment assessments and highlight key fact
                     HumanMessage(content=f"Analyze the sentiment of the following news data:\n{sentiment_input}")
                 ]
             )
+            log_info(f"SentimentAgent: LLM sentiment analysis completed ({len(result.content)} characters)")
             
             # Process the sentiment analysis result
+            log_info("SentimentAgent: Processing sentiment analysis result")
             output_data = await self._process_sentiment_result(result, news_data)
+            log_info(f"SentimentAgent: Sentiment analysis result processed successfully")
+            
+            # Log key sentiment insights
+            if 'sentiment_analysis' in output_data:
+                sentiment_analysis = output_data['sentiment_analysis']
+                log_info(f"SentimentAgent: Sentiment Analysis Results:")
+                log_info(f"   • Overall Sentiment: {sentiment_analysis.get('overall_sentiment', 'Unknown')}")
+                log_info(f"   • Sentiment Score: {sentiment_analysis.get('sentiment_score', 0.0):.2f}")
+                log_info(f"   • Positive Articles: {sentiment_analysis.get('positive_articles', 0)}")
+                log_info(f"   • Negative Articles: {sentiment_analysis.get('negative_articles', 0)}")
+                log_info(f"   • Confidence: {sentiment_analysis.get('confidence_level', 0.0):.2f}")
             
             self.update_state(task, TaskStatus.COMPLETED, output_data)
             
+            log_info("SentimentAgent: Sentiment analysis completed successfully")
             return AgentResponse(
                 agent_type=self.agent_type,
                 success=True,
@@ -122,7 +140,7 @@ Provide clear explanations for your sentiment assessments and highlight key fact
             
         except Exception as e:
             error_msg = f"Sentiment analysis failed: {str(e)}"
-            log_error(error_msg)
+            log_error(f"SentimentAgent: {error_msg}")
             
             self.update_state(task, TaskStatus.FAILED)
             
@@ -395,7 +413,3 @@ Key sentiment drivers include market reactions, company announcements, and indus
                 "success": False,
                 "error": str(e)
             }
-
-# ===============================================================================
-# EXAMPLE USAGE
-# ===============================================================================

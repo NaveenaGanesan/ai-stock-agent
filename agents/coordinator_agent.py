@@ -399,18 +399,34 @@ class CoordinatorAgent:
         if not state["workflow_state"].stock_data:
             error_msg = "No stock data available for analysis"
             state["errors"].append(error_msg)
+            log_error(f"CoordinatorAgent: {error_msg}")
             return state
         
         try:
+            log_info(f"CoordinatorAgent: Starting technical analysis for {state['workflow_state'].company_name}")
+            
             # Use the analysis agent to analyze stock data
             result = await self.analysis_agent.analyze_stock(state["workflow_state"].stock_data)
             
             if result["success"]:
-                # Extract technical analysis from response
-                tech_analysis = result["data"].get("technical_analysis")
-                if tech_analysis:
-                    state["workflow_state"].technical_analysis = tech_analysis
-                    log_info("Technical analysis completed")
+                # Extract technical analysis from response and convert to proper model
+                tech_analysis_data = result["data"].get("technical_analysis")
+                if tech_analysis_data:
+                    # Convert dictionary to TechnicalAnalysis model
+                    technical_analysis = TechnicalAnalysis(
+                        trend_direction=tech_analysis_data.get("trend_direction", TrendDirection.SIDEWAYS),
+                        trend_strength=tech_analysis_data.get("trend_strength", 0.5),
+                        volatility_level=tech_analysis_data.get("volatility_level", "Medium"),
+                        support_level=tech_analysis_data.get("support_level"),
+                        resistance_level=tech_analysis_data.get("resistance_level"),
+                        momentum_indicator=tech_analysis_data.get("momentum_indicator", "Neutral"),
+                        key_insights=tech_analysis_data.get("key_insights", []),
+                        confidence_level=tech_analysis_data.get("confidence_level", 0.7)
+                    )
+                    
+                    # Store the proper model object in workflow state
+                    state["workflow_state"].technical_analysis = technical_analysis
+                    log_info(f"CoordinatorAgent: Technical analysis completed with {technical_analysis.trend_direction} trend")
                 
                 state["analysis_response"] = AgentResponse(
                     agent_type=AgentType.ANALYSIS,
@@ -421,7 +437,7 @@ class CoordinatorAgent:
             else:
                 error_msg = f"Analysis failed: {result.get('error')}"
                 state["errors"].append(error_msg)
-                log_error(error_msg)
+                log_error(f"CoordinatorAgent: {error_msg}")
                 
                 state["analysis_response"] = AgentResponse(
                     agent_type=AgentType.ANALYSIS,
@@ -433,7 +449,7 @@ class CoordinatorAgent:
         except Exception as e:
             error_msg = f"Analysis step failed: {str(e)}"
             state["errors"].append(error_msg)
-            log_error(error_msg)
+            log_error(f"CoordinatorAgent: {error_msg}")
             
             state["analysis_response"] = AgentResponse(
                 agent_type=AgentType.ANALYSIS,
@@ -454,18 +470,34 @@ class CoordinatorAgent:
         if not state["workflow_state"].news_data:
             error_msg = "No news data available for sentiment analysis"
             state["errors"].append(error_msg)
+            log_error(f"CoordinatorAgent: {error_msg}")
             return state
         
         try:
+            log_info(f"CoordinatorAgent: Starting sentiment analysis for {state['workflow_state'].company_name}")
+            
             # Use the sentiment agent to analyze news data
             result = await self.sentiment_agent.analyze_sentiment(state["workflow_state"].news_data)
             
             if result["success"]:
-                # Extract sentiment analysis from response
-                sentiment_analysis = result["data"].get("sentiment_analysis")
-                if sentiment_analysis:
+                # Extract sentiment analysis from response and convert to proper model
+                sentiment_analysis_data = result["data"].get("sentiment_analysis")
+                if sentiment_analysis_data:
+                    # Convert dictionary to SentimentAnalysis model
+                    sentiment_analysis = SentimentAnalysis(
+                        overall_sentiment=SentimentType(sentiment_analysis_data.get("overall_sentiment", SentimentType.NEUTRAL)),
+                        sentiment_score=sentiment_analysis_data.get("sentiment_score", 0.0),
+                        positive_articles=sentiment_analysis_data.get("positive_articles", 0),
+                        negative_articles=sentiment_analysis_data.get("negative_articles", 0),
+                        neutral_articles=sentiment_analysis_data.get("neutral_articles", 0),
+                        key_themes=sentiment_analysis_data.get("key_themes", []),
+                        sentiment_breakdown=sentiment_analysis_data.get("sentiment_breakdown", {}),
+                        confidence_level=sentiment_analysis_data.get("confidence_level", 0.7)
+                    )
+                    
+                    # Store the proper model object in workflow state
                     state["workflow_state"].sentiment_analysis = sentiment_analysis
-                    log_info("Sentiment analysis completed")
+                    log_info(f"CoordinatorAgent: Sentiment analysis completed - {sentiment_analysis.overall_sentiment} sentiment")
                 
                 state["sentiment_response"] = AgentResponse(
                     agent_type=AgentType.SENTIMENT,
@@ -476,7 +508,7 @@ class CoordinatorAgent:
             else:
                 error_msg = f"Sentiment analysis failed: {result.get('error')}"
                 state["errors"].append(error_msg)
-                log_error(error_msg)
+                log_error(f"CoordinatorAgent: {error_msg}")
                 
                 state["sentiment_response"] = AgentResponse(
                     agent_type=AgentType.SENTIMENT,
@@ -488,7 +520,7 @@ class CoordinatorAgent:
         except Exception as e:
             error_msg = f"Sentiment step failed: {str(e)}"
             state["errors"].append(error_msg)
-            log_error(error_msg)
+            log_error(f"CoordinatorAgent: {error_msg}")
             
             state["sentiment_response"] = AgentResponse(
                 agent_type=AgentType.SENTIMENT,
@@ -576,146 +608,3 @@ class CoordinatorAgent:
             log_error(f"Workflow errors: {'; '.join(state['errors'])}")
         
         return state
-
-    async def _extract_company_info(self, query: str) -> Optional[Dict[str, Any]]:
-        """Extract company/ticker information from user query."""
-        try:
-            # Use LLM to extract company information
-            prompt = f"""
-            Extract the company name or stock ticker from this query: "{query}"
-            
-            Return the information in this format:
-            Company: [company name]
-            Ticker: [ticker symbol if mentioned]
-            
-            If no clear company is mentioned, return "None" for both.
-            """
-            
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-            response_text = response.content
-            
-            # Simple parsing (could be enhanced with more sophisticated NLP)
-            if "None" in response_text:
-                return None
-            
-            # Try to lookup ticker
-            company_name = None
-            ticker = None
-            
-            # Extract potential company name from response
-            if "Company:" in response_text:
-                company_name = response_text.split("Company:")[1].split("\n")[0].strip()
-            
-            # Extract potential ticker from response
-            if "Ticker:" in response_text:
-                ticker = response_text.split("Ticker:")[1].split("\n")[0].strip()
-            
-            # If we have a company name, try to lookup ticker using AI agent
-            if company_name and not ticker:
-                try:
-                    result = await self.ticker_lookup_agent.resolve_company_ticker(company_name)
-                    if result.get('ticker'):
-                        ticker = result['ticker']
-                        company_name = result.get('company_name', company_name)
-                except Exception as e:
-                    log_error(f"Error resolving ticker with AI agent: {str(e)}")
-                    # Continue without ticker if AI lookup fails
-            
-            # If we have a ticker, validate it using AI agent
-            if ticker and not company_name:
-                try:
-                    result = await self.ticker_lookup_agent.validate_company(ticker)
-                    if result.get('is_valid'):
-                        company_name = result.get('company_name', company_name)
-                except Exception as e:
-                    log_error(f"Error validating ticker with AI agent: {str(e)}")
-            
-            if ticker and company_name:
-                return {
-                    "company_name": company_name,
-                    "ticker": ticker
-                }
-            
-            return None
-            
-        except Exception as e:
-            log_error(f"Error extracting company info: {str(e)}")
-            return None
-    
-    async def _fetch_stock_data(self, ticker: str, company_name: str) -> Optional[StockData]:
-        """Fetch stock data and convert to StockData model."""
-        try:
-            data = self.stock_fetcher.get_comprehensive_data(ticker)
-            
-            if not data:
-                return None
-            
-            # Convert to StockData model
-            company_info = CompanyInfo(
-                symbol=data.get("symbol", ticker),
-                name=data.get("name", company_name),
-                sector=data.get("sector"),
-                industry=data.get("industry"),
-                market_cap=data.get("market_cap"),
-                current_price=data.get("current_price"),
-                currency=data.get("currency", "USD"),
-                exchange=data.get("exchange"),
-                website=data.get("website"),
-                business_summary=data.get("business_summary")
-            )
-            
-            stock_movement = None
-            if "movements" in data:
-                movements = data["movements"]
-                stock_movement = StockMovement(
-                    first_price=movements.get("first_price", 0),
-                    last_price=movements.get("last_price", 0),
-                    price_change=movements.get("price_change", 0),
-                    percentage_change=movements.get("percentage_change", 0),
-                    trend=TrendDirection(movements.get("trend", "Sideways")),
-                    volatility=movements.get("volatility", 0),
-                    period_high=movements.get("period_high", 0),
-                    period_low=movements.get("period_low", 0),
-                    avg_volume=movements.get("avg_volume", 0)
-                )
-            
-            return StockData(
-                company_info=company_info,
-                movements=stock_movement,
-                data_period_days=data.get("data_period_days", 7)
-            )
-            
-        except Exception as e:
-            log_error(f"Error fetching stock data: {str(e)}")
-            return None
-    
-    async def _fetch_news_data(self, company_name: str, ticker: str) -> Optional[NewsData]:
-        """Fetch news data and convert to NewsData model."""
-        try:
-            articles = self.news_fetcher.get_company_news(company_name, ticker, limit=5)
-            
-            if not articles:
-                return None
-            
-            # Convert to NewsArticle models
-            news_articles = []
-            for article in articles:
-                news_article = NewsArticle(
-                    title=article.get("title", ""),
-                    url=article.get("url", ""),
-                    summary=article.get("summary"),
-                    published_date=article.get("published_date", datetime.now()),
-                    source=article.get("source", "Unknown"),
-                    ticker=ticker
-                )
-                news_articles.append(news_article)
-            
-            return NewsData(
-                articles=news_articles,
-                company_name=company_name,
-                ticker=ticker
-            )
-            
-        except Exception as e:
-            log_error(f"Error fetching news data: {str(e)}")
-            return None

@@ -55,20 +55,49 @@ class StockSummaryService:
     
     def _format_success_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Format successful analysis response for API."""
-        final_summary = result.get("final_summary", {})
+        final_summary = result.get("final_summary")
         
-        # Extract core analysis data
-        analysis_data = {
-            "company_name": final_summary.get("company_name", "Unknown"),
-            "ticker": final_summary.get("ticker", "Unknown"),
-            "executive_summary": final_summary.get("executive_summary", ""),
-            "price_analysis": final_summary.get("price_analysis", ""),
-            "news_sentiment": final_summary.get("news_sentiment", ""),
-            "technical_outlook": final_summary.get("technical_outlook", ""),
-            "risk_assessment": final_summary.get("risk_assessment", ""),
-            "confidence_level": final_summary.get("confidence_level", 0.0),
-            "data_sources": final_summary.get("data_sources", [])
-        }
+        # Handle both StockSummary object and dict cases
+        if final_summary:
+            if hasattr(final_summary, 'company_name'):
+                # It's a StockSummary Pydantic model
+                analysis_data = {
+                    "company_name": final_summary.company_name,
+                    "ticker": final_summary.ticker,
+                    "executive_summary": final_summary.executive_summary,
+                    "price_analysis": final_summary.price_analysis,
+                    "news_sentiment": final_summary.news_sentiment,
+                    "technical_outlook": final_summary.technical_outlook,
+                    "risk_assessment": final_summary.risk_assessment,
+                    "confidence_level": final_summary.confidence_level,
+                    "data_sources": final_summary.data_sources or []
+                }
+            else:
+                # It's a dictionary (fallback)
+                analysis_data = {
+                    "company_name": final_summary.get("company_name", "Unknown"),
+                    "ticker": final_summary.get("ticker", "Unknown"),
+                    "executive_summary": final_summary.get("executive_summary", ""),
+                    "price_analysis": final_summary.get("price_analysis", ""),
+                    "news_sentiment": final_summary.get("news_sentiment", ""),
+                    "technical_outlook": final_summary.get("technical_outlook", ""),
+                    "risk_assessment": final_summary.get("risk_assessment", ""),
+                    "confidence_level": final_summary.get("confidence_level", 0.0),
+                    "data_sources": final_summary.get("data_sources", [])
+                }
+        else:
+            # No final summary available
+            analysis_data = {
+                "company_name": "Unknown",
+                "ticker": "Unknown",
+                "executive_summary": "Analysis incomplete",
+                "price_analysis": "Price analysis unavailable",
+                "news_sentiment": "Sentiment analysis unavailable",
+                "technical_outlook": "Technical outlook unavailable",
+                "risk_assessment": "Risk assessment unavailable",
+                "confidence_level": 0.0,
+                "data_sources": []
+            }
         
         return {
             "success": True,

@@ -22,10 +22,6 @@ from utils import log_info, log_error, get_env_variable
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# ===============================================================================
-# ANALYSIS AGENT
-# ===============================================================================
-
 class AnalysisAgent:
     """Agent responsible for technical analysis."""
     
@@ -84,12 +80,14 @@ Format your analysis in a structured way with:
     
     async def execute_task(self, task: AgentTask, workflow_state: WorkflowState) -> AgentResponse:
         """Execute analysis task."""
+        log_info(f"AnalysisAgent: Starting technical analysis task for {workflow_state.company_name or 'Unknown'}")
         self.update_state(task, TaskStatus.IN_PROGRESS)
         
         try:
             # Get stock data from workflow state
             stock_data = workflow_state.stock_data
             if not stock_data:
+                log_error("AnalysisAgent: No stock data available for analysis")
                 return AgentResponse(
                     agent_type=self.agent_type,
                     success=False,
@@ -97,10 +95,16 @@ Format your analysis in a structured way with:
                     error="Missing stock data"
                 )
             
+            log_info(f"AnalysisAgent: Processing stock data for {stock_data.company_info.name} ({stock_data.company_info.symbol})")
+            log_info(f"AnalysisAgent: Current price: ${stock_data.company_info.current_price:.2f}, Change: {stock_data.movements.percentage_change:.2f}%")
+            
             # Prepare analysis input
+            log_info("AnalysisAgent: Preparing analysis input")
             analysis_input = self._prepare_analysis_input(stock_data)
+            log_info(f"AnalysisAgent: Analysis input prepared ({len(analysis_input)} characters)")
             
             # Execute analysis using the LLM
+            log_info("AnalysisAgent: Executing LLM analysis")
             result = await self._execute_with_retry(
                 self.llm.ainvoke,
                 [
@@ -108,12 +112,25 @@ Format your analysis in a structured way with:
                     HumanMessage(content=f"Analyze the following stock data:\n{analysis_input}")
                 ]
             )
+            log_info(f"AnalysisAgent: LLM analysis completed ({len(result.content)} characters)")
             
             # Process the analysis result
+            log_info("AnalysisAgent: Processing analysis result")
             output_data = await self._process_analysis_result(result, stock_data)
+            log_info(f"AnalysisAgent: Analysis result processed successfully")
+            
+            # Log key analysis insights
+            if 'technical_analysis' in output_data:
+                tech_analysis = output_data['technical_analysis']
+                log_info(f"AnalysisAgent: Technical Analysis Results:")
+                log_info(f"   • Trend: {tech_analysis.get('trend_direction', 'Unknown')}")
+                log_info(f"   • Strength: {tech_analysis.get('trend_strength', 'Unknown')}")
+                log_info(f"   • Volatility: {tech_analysis.get('volatility_level', 'Unknown')}")
+                log_info(f"   • Confidence: {tech_analysis.get('confidence_level', 0.0):.2f}")
             
             self.update_state(task, TaskStatus.COMPLETED, output_data)
             
+            log_info("AnalysisAgent: Technical analysis completed successfully")
             return AgentResponse(
                 agent_type=self.agent_type,
                 success=True,
@@ -123,7 +140,7 @@ Format your analysis in a structured way with:
             
         except Exception as e:
             error_msg = f"Analysis failed: {str(e)}"
-            log_error(error_msg)
+            log_error(f"AnalysisAgent: {error_msg}")
             
             self.update_state(task, TaskStatus.FAILED)
             
@@ -394,7 +411,3 @@ Volatility is at {movements.volatility:.2%} with average volume of {movements.av
                 "success": False,
                 "error": str(e)
             }
-
-# ===============================================================================
-# EXAMPLE USAGE
-# ===============================================================================
